@@ -82,6 +82,13 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 
 **Note**: Field mappings are now defined **within each related entity**, allowing different entities to have different field mappings from the same parent.
 
+### Lookup / Option Set to Text Targets
+
+- When the target field is a **text** (string/memo) field and the source value is a **lookup** or **option set**, the plugin writes the **display text** into the target.
+- For lookups, it uses the `name` on the `EntityReference` (or the formatted value) and falls back to the GUID if no name is present.
+- For option sets, it uses the formatted label when available; otherwise, it uses the numeric value.
+- Attribute metadata is cached per attribute to avoid repeated metadata calls; if metadata is unavailable, the raw value is used and a warning is logged.
+
 Filter criteria uses a simple pipe-delimited format:
 
 ``` text

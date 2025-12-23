@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>CascadeFields.Configurator</id>
+    <version>0.0.0</version>
+    <title>CascadeFields Configurator</title>
+    <authors>Scott Sewell</authors>
+    <owners>Scott Sewell</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="expression">MIT</license>
+    <projectUrl>https://github.com/mscottsewell/CascadeFields</projectUrl>
+    <description>XrmToolBox utility to configure and deploy the CascadeFields plugin for Microsoft Dataverse.</description>
+    <tags>XrmToolBox Dataverse Dynamics</tags>
+    <dependencies>
+      <dependency id="XrmToolBoxPackage" version="[1.2025.10.74,)" />
+      <dependency id="MscrmTools.Xrm.Connection" version="[1.2025.9.64,)" />
+      <dependency id="Microsoft.CrmSdk.CoreAssemblies" version="[9.0.2.59,)" />
+      <dependency id="Microsoft.CrmSdk.XrmTooling.CoreAssembly" version="[9.1.1.65,)" />
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="bin\**\net48\CascadeFields.Configurator.dll" target="tools" />
+    <file src="bin\**\net48\CascadeFields.Configurator.pdb" target="tools" />
+    <file src="Assets\plugin\CascadeFields.Plugin.dll" target="tools\plugin" />
+    <file src="Assets\plugin\CascadeFields.Plugin.pdb" target="tools\plugin" />
+  </files>
+</package>

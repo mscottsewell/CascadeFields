@@ -1,11 +1,14 @@
 using CascadeFields.Plugin.Helpers;
 using CascadeFields.Plugin.Models;
 using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using ModelCascadeConfiguration = CascadeFields.Plugin.Models.CascadeConfiguration;
 
 namespace CascadeFields.Plugin.Services
 {
@@ -16,17 +19,19 @@ namespace CascadeFields.Plugin.Services
     {
         private readonly IOrganizationService _service;
         private readonly PluginTracer _tracer;
+        private readonly Dictionary<string, AttributeTypeCode?> _attributeTypeCache;
 
         public CascadeService(IOrganizationService service, PluginTracer tracer)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _tracer = tracer ?? throw new ArgumentNullException(nameof(tracer));
+            _attributeTypeCache = new Dictionary<string, AttributeTypeCode?>(StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>
         /// Checks if any trigger fields have changed
         /// </summary>
-        public bool HasTriggerFieldChanged(Entity target, Entity preImage, CascadeConfiguration config)
+        public bool HasTriggerFieldChanged(Entity target, Entity preImage, ModelCascadeConfiguration config)
         {
             _tracer.StartOperation("HasTriggerFieldChanged");
 
@@ -86,7 +91,7 @@ namespace CascadeFields.Plugin.Services
         /// <summary>
         /// Cascades field values to related entities
         /// </summary>
-        public void CascadeFieldValues(Entity target, Entity preImage, CascadeConfiguration config)
+        public void CascadeFieldValues(Entity target, Entity preImage, ModelCascadeConfiguration config)
         {
             _tracer.StartOperation("CascadeFieldValues");
 
@@ -126,21 +131,88 @@ namespace CascadeFields.Plugin.Services
                 // Prefer target over preImage
                 if (target.Contains(mapping.SourceField))
                 {
-                    values[mapping.TargetField] = target[mapping.SourceField];
-                    _tracer.Debug($"Mapping: {mapping.SourceField} -> {mapping.TargetField} = {target[mapping.SourceField]}");
+                    var mappedValue = GetMappedValueForTarget(target, mapping, relatedEntityConfig.EntityName);
+                    values[mapping.TargetField] = mappedValue;
+                    _tracer.Debug($"Mapping: {mapping.SourceField} -> {mapping.TargetField} = {mappedValue}");
                 }
                 else if (preImage != null && preImage.Contains(mapping.SourceField))
                 {
-                    values[mapping.TargetField] = preImage[mapping.SourceField];
-                    _tracer.Debug($"Mapping (from preImage): {mapping.SourceField} -> {mapping.TargetField} = {preImage[mapping.SourceField]}");
+                    var mappedValue = GetMappedValueForTarget(preImage, mapping, relatedEntityConfig.EntityName);
+                    values[mapping.TargetField] = mappedValue;
+                    _tracer.Debug($"Mapping (from preImage): {mapping.SourceField} -> {mapping.TargetField} = {mappedValue}");
                 }
             }
 
             return values;
         }
 
+        private object GetMappedValueForTarget(Entity sourceEntity, FieldMapping mapping, string targetEntityName)
+        {
+            var rawValue = sourceEntity[mapping.SourceField];
+            var formattedValue = sourceEntity.FormattedValues != null && sourceEntity.FormattedValues.Contains(mapping.SourceField)
+                ? sourceEntity.FormattedValues[mapping.SourceField]
+                : null;
+
+            var targetAttributeType = GetTargetAttributeType(targetEntityName, mapping.TargetField);
+
+            if (targetAttributeType.HasValue && (targetAttributeType.Value == AttributeTypeCode.String || targetAttributeType.Value == AttributeTypeCode.Memo))
+            {
+                // When targeting a text field, convert lookups/optionsets to display text
+                if (rawValue is EntityReference entityRef)
+                {
+                    return !string.IsNullOrWhiteSpace(entityRef.Name)
+                        ? entityRef.Name
+                        : formattedValue ?? entityRef.Id.ToString();
+                }
+
+                if (rawValue is OptionSetValue optionSet)
+                {
+                    return formattedValue ?? optionSet.Value.ToString();
+                }
+            }
+
+            return rawValue;
+        }
+
+        private AttributeTypeCode? GetTargetAttributeType(string entityLogicalName, string attributeLogicalName)
+        {
+            if (string.IsNullOrWhiteSpace(entityLogicalName) || string.IsNullOrWhiteSpace(attributeLogicalName))
+            {
+                return null;
+            }
+
+            var cacheKey = $"{entityLogicalName}:{attributeLogicalName}";
+
+            if (_attributeTypeCache.TryGetValue(cacheKey, out var cachedType))
+            {
+                return cachedType;
+            }
+
+            try
+            {
+                var request = new RetrieveAttributeRequest
+                {
+                    EntityLogicalName = entityLogicalName,
+                    LogicalName = attributeLogicalName,
+                    RetrieveAsIfPublished = true
+                };
+
+                var response = (RetrieveAttributeResponse)_service.Execute(request);
+                var attributeMetadata = response?.AttributeMetadata;
+
+                _attributeTypeCache[cacheKey] = attributeMetadata?.AttributeType;
+                return attributeMetadata?.AttributeType;
+            }
+            catch (Exception ex)
+            {
+                _tracer.Warning($"Unable to retrieve attribute metadata for {entityLogicalName}.{attributeLogicalName}: {ex.Message}");
+                _attributeTypeCache[cacheKey] = null;
+                return null;
+            }
+        }
+
         private void CascadeToRelatedEntity(Guid parentId, Dictionary<string, object> values, 
-            RelatedEntityConfig relatedConfig, CascadeConfiguration config)
+            RelatedEntityConfig relatedConfig, ModelCascadeConfiguration config)
         {
             _tracer.StartOperation($"CascadeToRelatedEntity-{relatedConfig.EntityName}");
 
@@ -188,7 +260,7 @@ namespace CascadeFields.Plugin.Services
         }
 
         private List<Entity> RetrieveRelatedRecords(Guid parentId, RelatedEntityConfig relatedConfig, 
-            CascadeConfiguration config)
+            ModelCascadeConfiguration config)
         {
             _tracer.StartOperation("RetrieveRelatedRecords");
 
@@ -221,7 +293,7 @@ namespace CascadeFields.Plugin.Services
         }
 
         private QueryExpression BuildQueryWithRelationship(Guid parentId, RelatedEntityConfig relatedConfig, 
-            CascadeConfiguration config)
+            ModelCascadeConfiguration config)
         {
             var query = new QueryExpression(relatedConfig.EntityName)
             {
