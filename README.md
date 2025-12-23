@@ -5,6 +5,7 @@ A flexible, configurable plugin for Microsoft Dataverse (Dynamics 365) that auto
 ## Features
 
 - ✅ **Configurable Field Mappings**: Define which fields to cascade from parent to child records
+- ✅ **Entity-Specific Mappings**: Each related entity can have its own unique field mappings
 - ✅ **Trigger Field Detection**: Only cascade when specific fields change
 - ✅ **Relationship-Based**: Support for both named relationships and lookup fields
 - ✅ **Filtering**: Apply filters to target only specific child records (e.g., only active records)
@@ -31,19 +32,19 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
   "name": "Configuration Name",
   "parentEntity": "account",
   "isActive": true,
-  "fieldMappings": [
-    {
-      "sourceField": "parentfieldname",
-      "targetField": "childfieldname",
-      "isTriggerField": true
-    }
-  ],
   "relatedEntities": [
     {
       "entityName": "contact",
       "relationshipName": "account_primary_contact",
       "useRelationship": true,
-      "filterCriteria": "statecode|eq|0"
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "parentfieldname",
+          "targetField": "childfieldname",
+          "isTriggerField": true
+        }
+      ]
     }
   ]
 }
@@ -57,16 +58,7 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 | `name` | string | No | Descriptive name for the configuration |
 | `parentEntity` | string | **Yes** | Logical name of the parent entity being monitored |
 | `isActive` | boolean | No | Whether this configuration is active (default: true) |
-| `fieldMappings` | array | **Yes** | Array of field mapping definitions |
 | `relatedEntities` | array | **Yes** | Array of related entity configurations |
-
-### Field Mapping Properties
-
-| Property | Type | Required | Description |
-|----------|------|----------|-------------|
-| `sourceField` | string | **Yes** | Field name on the parent entity |
-| `targetField` | string | **Yes** | Field name on the child entity |
-| `isTriggerField` | boolean | No | If true, changes to this field trigger the cascade |
 
 ### Related Entity Properties
 
@@ -77,8 +69,17 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 | `useRelationship` | boolean | No | Use relationship name vs. lookup field (default: true) |
 | `lookupFieldName` | string | Conditional | Lookup field name (required if `useRelationship` is false) |
 | `filterCriteria` | string | No | Filter to apply to child records |
+| `fieldMappings` | array | **Yes** | Array of field mapping definitions for this entity |
 
-### Filter Criteria Format
+### Field Mapping Properties
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `sourceField` | string | **Yes** | Field name on the parent entity |
+| `targetField` | string | **Yes** | Field name on the child entity |
+| `isTriggerField` | boolean | No | If true, changes to this field trigger the cascade |
+
+**Note**: Field mappings are now defined **within each related entity**, allowing different entities to have different field mappings from the same parent.
 
 Filter criteria uses a simple pipe-delimited format:
 
@@ -114,24 +115,24 @@ Cascade account status and primary industry to all active contacts:
   "name": "Cascade Account Fields to Contacts",
   "parentEntity": "account",
   "isActive": true,
-  "fieldMappings": [
-    {
-      "sourceField": "customstatusfield",
-      "targetField": "customstatusfield",
-      "isTriggerField": true
-    },
-    {
-      "sourceField": "industrycode",
-      "targetField": "industrycode",
-      "isTriggerField": false
-    }
-  ],
   "relatedEntities": [
     {
       "entityName": "contact",
       "useRelationship": false,
       "lookupFieldName": "parentcustomerid",
-      "filterCriteria": "statecode|eq|0"
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "customstatusfield",
+          "targetField": "customstatusfield",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "industrycode",
+          "targetField": "industrycode",
+          "isTriggerField": false
+        }
+      ]
     }
   ]
 }
@@ -147,19 +148,19 @@ Cascade opportunity expected close date to all active opportunity products:
   "name": "Cascade Opportunity Dates to Products",
   "parentEntity": "opportunity",
   "isActive": true,
-  "fieldMappings": [
-    {
-      "sourceField": "estimatedclosedate",
-      "targetField": "scheduledeliverydate",
-      "isTriggerField": true
-    }
-  ],
   "relatedEntities": [
     {
       "entityName": "opportunityproduct",
       "useRelationship": false,
       "lookupFieldName": "opportunityid",
-      "filterCriteria": "statecode|eq|0"
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "estimatedclosedate",
+          "targetField": "scheduledeliverydate",
+          "isTriggerField": true
+        }
+      ]
     }
   ]
 }
@@ -175,30 +176,42 @@ Cascade custom fields to multiple child entities with different filters:
   "name": "Cascade Parent to Multiple Children",
   "parentEntity": "new_parent",
   "isActive": true,
-  "fieldMappings": [
-    {
-      "sourceField": "new_customfield",
-      "targetField": "new_customfield",
-      "isTriggerField": true
-    },
-    {
-      "sourceField": "new_category",
-      "targetField": "new_category",
-      "isTriggerField": true
-    }
-  ],
   "relatedEntities": [
     {
       "entityName": "new_childtype1",
       "useRelationship": false,
       "lookupFieldName": "new_parentid",
-      "filterCriteria": "statecode|eq|0;new_type|eq|1"
+      "filterCriteria": "statecode|eq|0;new_type|eq|1",
+      "fieldMappings": [
+        {
+          "sourceField": "new_customfield",
+          "targetField": "new_customfield",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "new_category",
+          "targetField": "new_category",
+          "isTriggerField": true
+        }
+      ]
     },
     {
       "entityName": "new_childtype2",
       "useRelationship": false,
       "lookupFieldName": "new_parentid",
-      "filterCriteria": "statecode|eq|0"
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "new_customfield",
+          "targetField": "new_customfield",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "new_category",
+          "targetField": "new_category",
+          "isTriggerField": true
+        }
+      ]
     }
   ]
 }

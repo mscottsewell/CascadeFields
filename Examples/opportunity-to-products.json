@@ -3,24 +3,24 @@
   "name": "Cascade Opportunity Dates to Products",
   "parentEntity": "opportunity",
   "isActive": true,
-  "fieldMappings": [
-    {
-      "sourceField": "estimatedclosedate",
-      "targetField": "scheduledeliverydate",
-      "isTriggerField": true
-    },
-    {
-      "sourceField": "description",
-      "targetField": "description",
-      "isTriggerField": false
-    }
-  ],
   "relatedEntities": [
     {
       "entityName": "opportunityproduct",
       "useRelationship": false,
       "lookupFieldName": "opportunityid",
-      "filterCriteria": "ispriceoverridden|eq|false;statecode|eq|0"
+      "filterCriteria": "ispriceoverridden|eq|false;statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "estimatedclosedate",
+          "targetField": "scheduledeliverydate",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "description",
+          "targetField": "description",
+          "isTriggerField": false
+        }
+      ]
     }
   ]
 }

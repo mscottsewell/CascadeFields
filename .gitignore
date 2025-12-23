@@ -37,3 +37,4 @@ bld/
 # Strong name key files (sensitive)
 *.snk
 *.pfx
+Examples/cai_area_l1-to-cai_area_l2.json

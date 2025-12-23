@@ -3,36 +3,45 @@
   "name": "Cascade Case Priority to Activities",
   "parentEntity": "incident",
   "isActive": true,
-  "fieldMappings": [
-    {
-      "sourceField": "prioritycode",
-      "targetField": "prioritycode",
-      "isTriggerField": true
-    },
-    {
-      "sourceField": "customerid",
-      "targetField": "regardingobjectid",
-      "isTriggerField": false
-    }
-  ],
   "relatedEntities": [
     {
       "entityName": "task",
       "useRelationship": false,
       "lookupFieldName": "regardingobjectid",
-      "filterCriteria": "statecode|eq|0"
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "prioritycode",
+          "targetField": "prioritycode",
+          "isTriggerField": true
+        }
+      ]
     },
     {
       "entityName": "phonecall",
       "useRelationship": false,
       "lookupFieldName": "regardingobjectid",
-      "filterCriteria": "statecode|eq|0"
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "prioritycode",
+          "targetField": "prioritycode",
+          "isTriggerField": true
+        }
+      ]
     },
     {
       "entityName": "email",
       "useRelationship": false,
       "lookupFieldName": "regardingobjectid",
-      "filterCriteria": "statecode|eq|0"
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "prioritycode",
+          "targetField": "prioritycode",
+          "isTriggerField": true
+        }
+      ]
     }
   ]
 }

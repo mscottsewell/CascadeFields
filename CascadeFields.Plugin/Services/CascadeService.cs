@@ -30,10 +30,18 @@ namespace CascadeFields.Plugin.Services
         {
             _tracer.StartOperation("HasTriggerFieldChanged");
 
-            var triggerFields = config.FieldMappings
-                .Where(m => m.IsTriggerField)
-                .Select(m => m.SourceField)
-                .ToList();
+            // Collect all unique trigger fields from all related entities
+            var triggerFields = new HashSet<string>();
+            foreach (var relatedEntity in config.RelatedEntities)
+            {
+                if (relatedEntity.FieldMappings != null)
+                {
+                    foreach (var mapping in relatedEntity.FieldMappings.Where(m => m.IsTriggerField))
+                    {
+                        triggerFields.Add(mapping.SourceField);
+                    }
+                }
+            }
 
             if (triggerFields.Count == 0)
             {
@@ -84,21 +92,19 @@ namespace CascadeFields.Plugin.Services
 
             try
             {
-                // Get values to cascade
-                var valuesToCascade = GetValuesToCascade(target, preImage, config);
-
-                if (valuesToCascade.Count == 0)
-                {
-                    _tracer.Info("No values to cascade");
-                    _tracer.EndOperation("CascadeFieldValues");
-                    return;
-                }
-
-                _tracer.Info($"Cascading {valuesToCascade.Count} field values");
-
                 // Process each related entity configuration
                 foreach (var relatedEntityConfig in config.RelatedEntities)
                 {
+                    // Get values to cascade specific to this related entity
+                    var valuesToCascade = GetValuesToCascade(target, preImage, relatedEntityConfig);
+
+                    if (valuesToCascade.Count == 0)
+                    {
+                        _tracer.Info($"No values to cascade for {relatedEntityConfig.EntityName}");
+                        continue;
+                    }
+
+                    _tracer.Info($"Cascading {valuesToCascade.Count} field values to {relatedEntityConfig.EntityName}");
                     CascadeToRelatedEntity(target.Id, valuesToCascade, relatedEntityConfig, config);
                 }
 
@@ -111,11 +117,11 @@ namespace CascadeFields.Plugin.Services
             }
         }
 
-        private Dictionary<string, object> GetValuesToCascade(Entity target, Entity preImage, CascadeConfiguration config)
+        private Dictionary<string, object> GetValuesToCascade(Entity target, Entity preImage, RelatedEntityConfig relatedEntityConfig)
         {
             var values = new Dictionary<string, object>();
 
-            foreach (var mapping in config.FieldMappings)
+            foreach (var mapping in relatedEntityConfig.FieldMappings)
             {
                 // Prefer target over preImage
                 if (target.Contains(mapping.SourceField))

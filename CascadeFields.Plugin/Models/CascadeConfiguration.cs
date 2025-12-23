@@ -34,13 +34,6 @@ namespace CascadeFields.Plugin.Models
         public string ParentEntity { get; set; }
 
         /// <summary>
-        /// List of field mappings to cascade
-        /// </summary>
-        [DataMember]
-        [JsonProperty("fieldMappings")]
-        public List<FieldMapping> FieldMappings { get; set; }
-
-        /// <summary>
         /// Related entity configurations (child records to update)
         /// </summary>
         [DataMember]
@@ -56,7 +49,6 @@ namespace CascadeFields.Plugin.Models
 
         public CascadeConfiguration()
         {
-            FieldMappings = new List<FieldMapping>();
             RelatedEntities = new List<RelatedEntityConfig>();
             IsActive = true;
         }
@@ -69,16 +61,8 @@ namespace CascadeFields.Plugin.Models
             if (string.IsNullOrWhiteSpace(ParentEntity))
                 throw new InvalidPluginExecutionException("ParentEntity is required in cascade configuration.");
 
-            if (FieldMappings == null || FieldMappings.Count == 0)
-                throw new InvalidPluginExecutionException("At least one field mapping is required.");
-
             if (RelatedEntities == null || RelatedEntities.Count == 0)
                 throw new InvalidPluginExecutionException("At least one related entity configuration is required.");
-
-            foreach (var mapping in FieldMappings)
-            {
-                mapping.Validate();
-            }
 
             foreach (var relatedEntity in RelatedEntities)
             {
@@ -165,9 +149,17 @@ namespace CascadeFields.Plugin.Models
         [JsonProperty("lookupFieldName")]
         public string LookupFieldName { get; set; }
 
+        /// <summary>
+        /// Field mappings specific to this related entity
+        /// </summary>
+        [DataMember]
+        [JsonProperty("fieldMappings")]
+        public List<FieldMapping> FieldMappings { get; set; }
+
         public RelatedEntityConfig()
         {
             UseRelationship = true;
+            FieldMappings = new List<FieldMapping>();
         }
 
         public void Validate()
@@ -180,6 +172,14 @@ namespace CascadeFields.Plugin.Models
 
             if (!UseRelationship && string.IsNullOrWhiteSpace(LookupFieldName))
                 throw new InvalidPluginExecutionException("LookupFieldName is required when UseRelationship is false.");
+
+            if (FieldMappings == null || FieldMappings.Count == 0)
+                throw new InvalidPluginExecutionException($"At least one field mapping is required for related entity '{EntityName}'.");
+
+            foreach (var mapping in FieldMappings)
+            {
+                mapping.Validate();
+            }
         }
     }
 }

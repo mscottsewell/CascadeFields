@@ -46,8 +46,16 @@ namespace CascadeFields.Plugin.Helpers
 
                 _tracer.Info($"Configuration loaded: {config.Name} (Id: {config.Id})");
                 _tracer.Info($"Parent Entity: {config.ParentEntity}");
-                _tracer.Info($"Field Mappings: {config.FieldMappings?.Count ?? 0}");
                 _tracer.Info($"Related Entities: {config.RelatedEntities?.Count ?? 0}");
+                
+                // Log field mappings per entity
+                if (config.RelatedEntities != null)
+                {
+                    foreach (var entity in config.RelatedEntities)
+                    {
+                        _tracer.Info($"  - {entity.EntityName}: {entity.FieldMappings?.Count ?? 0} field mappings");
+                    }
+                }
 
                 // Validate configuration
                 config.Validate();
