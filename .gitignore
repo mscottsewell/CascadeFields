@@ -38,3 +38,5 @@ bld/
 *.snk
 *.pfx
 Examples/cai_area_l1-to-cai_area_l2.json
+Examples/Area L1 to Area L2 and Services and Initiatives.json
+Examples/Area L2 to Services and Initiatives.json

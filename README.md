@@ -347,7 +347,9 @@ For issues, questions, or contributions:
 
 ## License
 
-This project is provided as-is for use in Microsoft Dataverse environments.
+This project is licensed under the [MIT License](LICENSE) - see the LICENSE file for details.
+
+Copyright (c) 2025 mscottsewell
 
 ## Version History
 
