@@ -58,6 +58,7 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 | `name` | string | No | Descriptive name for the configuration |
 | `parentEntity` | string | **Yes** | Logical name of the parent entity being monitored |
 | `isActive` | boolean | No | Whether this configuration is active (default: true) |
+| `enableTracing` | boolean | No | Enable detailed tracing/logging (default: true) |
 | `relatedEntities` | array | **Yes** | Array of related entity configurations |
 
 ### Related Entity Properties
@@ -219,6 +220,48 @@ Cascade custom fields to multiple child entities with different filters:
 }
 ```
 
+### Example 5: Production Configuration with Minimal Tracing
+
+Same as Example 1 but with tracing disabled for production environments:
+
+```json
+{
+  "id": "prod-account-contact",
+  "name": "Production: Account to Contact (Minimal Tracing)",
+  "parentEntity": "account",
+  "isActive": true,
+  "enableTracing": false,
+  "relatedEntities": [
+    {
+      "entityName": "contact",
+      "useRelationship": false,
+      "lookupFieldName": "parentcustomerid",
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "address1_city",
+          "targetField": "address1_city",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "telephone1",
+          "targetField": "telephone1",
+          "isTriggerField": false
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Additional Examples**: See the `Examples` folder for more configuration samples including:
+
+- `account-to-contact.json` - Address and phone cascading
+- `opportunity-to-products.json` - Date field cascading
+- `case-to-activities.json` - Priority cascading to multiple activity types
+- `multi-entity-different-mappings.json` - Different field mappings per entity
+- `production-with-minimal-tracing.json` - Production configuration with tracing disabled
+
 ## Installation & Deployment
 
 ### Prerequisites
@@ -300,7 +343,29 @@ For each parent entity you want to monitor:
 
 ### Debug Logging
 
-The plugin provides detailed trace logging:
+The plugin provides detailed trace logging that can be controlled via the `enableTracing` configuration property:
+
+#### Enable Detailed Tracing (Development/Debugging)
+
+```json
+{
+  "parentEntity": "account",
+  "enableTracing": true,
+  ...
+}
+```
+
+#### Disable Detailed Tracing (Production)
+
+```json
+{
+  "parentEntity": "account",
+  "enableTracing": false,
+  ...
+}
+```
+
+When tracing is enabled, you'll see detailed logs like:
 
 ``` text
 [timestamp] [INFO] [CascadeFieldsPlugin] [+0ms] === Plugin Execution Started ===
@@ -310,6 +375,8 @@ The plugin provides detailed trace logging:
 [timestamp] [INFO] [CascadeFieldsPlugin] [+120ms] Found 15 related contact records
 [timestamp] [INFO] [CascadeFieldsPlugin] [+450ms] Update complete: 15 successful, 0 failed
 ```
+
+**Note**: Error logging is always enabled regardless of the `enableTracing` setting to ensure critical issues are captured.
 
 ## Performance Considerations
 

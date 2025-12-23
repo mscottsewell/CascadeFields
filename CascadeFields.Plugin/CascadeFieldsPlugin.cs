@@ -57,6 +57,10 @@ namespace CascadeFields.Plugin
                 var configManager = new ConfigurationManager(service, tracer);
                 var config = configManager.LoadConfiguration(_unsecureConfiguration);
 
+                // Apply tracing configuration
+                tracer.SetTracingEnabled(config.EnableTracing);
+                tracer.Debug($"Tracing enabled: {config.EnableTracing}");
+
                 // Check if configuration applies to this entity
                 if (!configManager.IsConfigurationApplicable(config, context.PrimaryEntityName))
                 {

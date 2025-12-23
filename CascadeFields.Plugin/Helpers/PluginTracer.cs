@@ -12,20 +12,38 @@ namespace CascadeFields.Plugin.Helpers
         private readonly ITracingService _tracingService;
         private readonly string _pluginName;
         private readonly Stopwatch _stopwatch;
+        private bool _isEnabled;
 
         public PluginTracer(ITracingService tracingService, string pluginName)
         {
             _tracingService = tracingService ?? throw new ArgumentNullException(nameof(tracingService));
             _pluginName = pluginName;
             _stopwatch = Stopwatch.StartNew();
+            _isEnabled = true; // Default enabled
         }
+
+        /// <summary>
+        /// Sets whether tracing is enabled
+        /// </summary>
+        public void SetTracingEnabled(bool isEnabled)
+        {
+            _isEnabled = isEnabled;
+        }
+
+        /// <summary>
+        /// Gets whether tracing is currently enabled
+        /// </summary>
+        public bool IsEnabled => _isEnabled;
 
         /// <summary>
         /// Logs an informational message
         /// </summary>
         public void Info(string message)
         {
-            Log("INFO", message);
+            if (_isEnabled)
+            {
+                Log("INFO", message);
+            }
         }
 
         /// <summary>
@@ -33,7 +51,10 @@ namespace CascadeFields.Plugin.Helpers
         /// </summary>
         public void Warning(string message)
         {
-            Log("WARNING", message);
+            if (_isEnabled)
+            {
+                Log("WARNING", message);
+            }
         }
 
         /// <summary>
@@ -56,7 +77,10 @@ namespace CascadeFields.Plugin.Helpers
         /// </summary>
         public void Debug(string message)
         {
-            Log("DEBUG", message);
+            if (_isEnabled)
+            {
+                Log("DEBUG", message);
+            }
         }
 
         /// <summary>
@@ -64,7 +88,10 @@ namespace CascadeFields.Plugin.Helpers
         /// </summary>
         public void StartOperation(string operationName)
         {
-            Info($"Starting operation: {operationName}");
+            if (_isEnabled)
+            {
+                Info($"Starting operation: {operationName}");
+            }
         }
 
         /// <summary>
@@ -72,7 +99,10 @@ namespace CascadeFields.Plugin.Helpers
         /// </summary>
         public void EndOperation(string operationName)
         {
-            Info($"Completed operation: {operationName} | Elapsed: {_stopwatch.ElapsedMilliseconds}ms");
+            if (_isEnabled)
+            {
+                Info($"Completed operation: {operationName} | Elapsed: {_stopwatch.ElapsedMilliseconds}ms");
+            }
         }
 
         /// <summary>

@@ -47,10 +47,19 @@ namespace CascadeFields.Plugin.Models
         [JsonProperty("isActive")]
         public bool IsActive { get; set; }
 
+        /// <summary>
+        /// Whether detailed tracing is enabled (default: true)
+        /// Set to false in production to reduce trace log verbosity
+        /// </summary>
+        [DataMember]
+        [JsonProperty("enableTracing")]
+        public bool EnableTracing { get; set; }
+
         public CascadeConfiguration()
         {
             RelatedEntities = new List<RelatedEntityConfig>();
             IsActive = true;
+            EnableTracing = true;
         }
 
         /// <summary>

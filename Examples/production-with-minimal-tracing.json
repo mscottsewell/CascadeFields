@@ -1,9 +1,9 @@
 {
-  "id": "account-contact-cascade",
-  "name": "Cascade Account Fields to Contacts",
+  "id": "prod-account-contact",
+  "name": "Production: Account to Contact (Minimal Tracing)",
   "parentEntity": "account",
   "isActive": true,
-  "enableTracing": true,
+  "enableTracing": false,
   "relatedEntities": [
     {
       "entityName": "contact",
@@ -19,11 +19,6 @@
         {
           "sourceField": "address1_stateorprovince",
           "targetField": "address1_stateorprovince",
-          "isTriggerField": true
-        },
-        {
-          "sourceField": "address1_postalcode",
-          "targetField": "address1_postalcode",
           "isTriggerField": true
         },
         {
