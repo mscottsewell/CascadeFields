@@ -7,6 +7,7 @@ The CascadeFields plugin is a fully configurable Microsoft Dataverse plugin that
 ## ✅ Completed Features
 
 ### Core Functionality
+
 - ✅ Configurable field mappings via JSON
 - ✅ Trigger field detection (only cascade when specific fields change)
 - ✅ Support for both relationship-based and lookup field-based queries
@@ -15,6 +16,7 @@ The CascadeFields plugin is a fully configurable Microsoft Dataverse plugin that
 - ✅ Asynchronous execution for non-blocking operations
 
 ### Error Handling & Tracing
+
 - ✅ Comprehensive error handling with try-catch blocks
 - ✅ Detailed tracing with timestamps and elapsed time
 - ✅ Execution context logging
@@ -23,6 +25,7 @@ The CascadeFields plugin is a fully configurable Microsoft Dataverse plugin that
 - ✅ Configuration validation
 
 ### Data Type Support
+
 - ✅ String fields
 - ✅ Numeric fields (int, decimal)
 - ✅ Boolean fields
@@ -33,6 +36,7 @@ The CascadeFields plugin is a fully configurable Microsoft Dataverse plugin that
 - ✅ GUID fields
 
 ### Performance Features
+
 - ✅ Change detection (only processes if trigger fields changed)
 - ✅ Filtering attributes support
 - ✅ NoLock query hints
@@ -40,7 +44,7 @@ The CascadeFields plugin is a fully configurable Microsoft Dataverse plugin that
 
 ## 📁 Project Structure
 
-```
+``` text
 CascadeFields/
 ├── CascadeFields.sln                    # Solution file
 ├── .gitignore                           # Git ignore rules
@@ -69,6 +73,7 @@ CascadeFields/
 ## 🔧 Technical Implementation
 
 ### Plugin Registration
+
 - **Message**: Update
 - **Stage**: Post-operation (40)
 - **Mode**: Asynchronous (recommended)
@@ -77,34 +82,44 @@ CascadeFields/
 ### Key Classes
 
 #### 1. CascadeFieldsPlugin.cs
+
 Main plugin entry point. Handles:
+
 - Service provider initialization
 - Context validation
 - Configuration loading
 - Orchestration of cascade operations
 
 #### 2. CascadeService.cs
+
 Core business logic. Handles:
+
 - Trigger field change detection
 - Related record retrieval
 - Filter criteria application
 - Record updates
 
 #### 3. PluginTracer.cs
+
 Logging and tracing. Provides:
+
 - Timestamped log entries
 - Elapsed time tracking
 - Multiple log levels (Info, Warning, Error, Debug)
 - Exception logging with stack traces
 
 #### 4. ConfigurationManager.cs
+
 Configuration management. Handles:
+
 - JSON deserialization
 - Configuration validation
 - Applicability checking
 
 #### 5. CascadeConfiguration.cs
+
 Configuration models. Defines:
+
 - Configuration structure
 - Field mappings
 - Related entity configurations
@@ -140,6 +155,7 @@ Configuration models. Defines:
 ## 📚 Documentation
 
 ### Main Documentation (README.md)
+
 - Feature overview
 - Configuration schema
 - Configuration examples
@@ -149,12 +165,14 @@ Configuration models. Defines:
 - Best practices
 
 ### Quick Start Guide (QUICKSTART.md)
+
 - Step-by-step setup instructions
 - Plugin registration walkthrough
 - Testing procedures
 - Common issues and solutions
 
 ### Deployment Checklist (DEPLOYMENT-CHECKLIST.md)
+
 - Pre-deployment tasks
 - Registration steps
 - Testing verification
@@ -163,6 +181,7 @@ Configuration models. Defines:
 - Sign-off template
 
 ### Advanced Guide (ADVANCED.md)
+
 - Complex filter scenarios
 - Multiple configuration patterns
 - Performance optimization
@@ -175,6 +194,7 @@ Configuration models. Defines:
 ## 🎯 Best Practices Implemented
 
 ### Code Quality
+
 - ✅ Null reference checking
 - ✅ Exception handling at multiple levels
 - ✅ Input validation
@@ -183,6 +203,7 @@ Configuration models. Defines:
 - ✅ XML documentation comments
 
 ### Performance
+
 - ✅ Asynchronous execution (non-blocking)
 - ✅ Change detection (avoids unnecessary processing)
 - ✅ NoLock hints for queries
@@ -190,6 +211,7 @@ Configuration models. Defines:
 - ✅ Filtering attributes support
 
 ### Maintainability
+
 - ✅ Separation of concerns (models, services, helpers)
 - ✅ Configuration-driven (no hardcoding)
 - ✅ Comprehensive logging
@@ -197,6 +219,7 @@ Configuration models. Defines:
 - ✅ Example configurations
 
 ### Security
+
 - ✅ User context execution
 - ✅ Respects Dataverse security
 - ✅ Field-level security compliance
@@ -205,7 +228,9 @@ Configuration models. Defines:
 ## 🚀 Usage Examples
 
 ### Example 1: Account Address Cascading
+
 When an account's address changes, update all active contacts:
+
 ```json
 {
   "parentEntity": "account",
@@ -219,7 +244,9 @@ When an account's address changes, update all active contacts:
 ```
 
 ### Example 2: Opportunity Date Cascading
+
 When opportunity close date changes, update all opportunity products:
+
 ```json
 {
   "parentEntity": "opportunity",
@@ -234,7 +261,7 @@ When opportunity close date changes, update all opportunity products:
 
 ## 📊 Tracing Example
 
-```
+``` text
 [2025-12-22 10:15:30.123] [INFO] [CascadeFieldsPlugin] [+0ms] === Plugin Execution Started ===
 [2025-12-22 10:15:30.128] [INFO] [CascadeFieldsPlugin] [+5ms] Execution Context - Message: Update | Stage: 40 | Mode: 1
 [2025-12-22 10:15:30.130] [INFO] [CascadeFieldsPlugin] [+7ms] Primary Entity: account | Primary Entity Id: 12345678-...
@@ -265,6 +292,7 @@ When opportunity close date changes, update all opportunity products:
 ## 🔄 Future Enhancement Opportunities
 
 ### Potential Additions
+
 - Batch update operations using ExecuteMultipleRequest
 - Configuration caching for high-volume scenarios
 - Pagination for very large child record sets
@@ -275,6 +303,7 @@ When opportunity close date changes, update all opportunity products:
 - Web API for dynamic configuration updates
 
 ### Testing Enhancements
+
 - Unit test project
 - Integration test suite
 - Load testing scenarios
@@ -285,6 +314,7 @@ When opportunity close date changes, update all opportunity products:
 **Location**: `CascadeFields.Plugin\bin\Release\net462\CascadeFields.Plugin.dll`
 
 **Dependencies**:
+
 - Microsoft.CrmSdk.CoreAssemblies (9.0.2.56)
 - Newtonsoft.Json (13.0.3)
 - .NET Framework 4.6.2
@@ -313,6 +343,7 @@ When opportunity close date changes, update all opportunity products:
 ## 🎓 Key Learning Points
 
 This plugin demonstrates:
+
 - ✅ Proper Dataverse plugin architecture
 - ✅ Configuration-driven design
 - ✅ Comprehensive error handling

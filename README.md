@@ -53,7 +53,7 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 ### Configuration Properties
 
 | Property | Type | Required | Description |
-|----------|------|----------|-------------|
+| ---------- | ------ | ---------- | ------------- |
 | `id` | string | No | Unique identifier for the configuration |
 | `name` | string | No | Descriptive name for the configuration |
 | `parentEntity` | string | **Yes** | Logical name of the parent entity being monitored |
@@ -63,7 +63,7 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 ### Related Entity Properties
 
 | Property | Type | Required | Description |
-|----------|------|----------|-------------|
+| ---------- | ------ | ---------- | ------------- |
 | `entityName` | string | **Yes** | Logical name of the child entity |
 | `relationshipName` | string | Conditional | Name of the relationship (required if `useRelationship` is true) |
 | `useRelationship` | boolean | No | Use relationship name vs. lookup field (default: true) |
@@ -74,7 +74,7 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 ### Field Mapping Properties
 
 | Property | Type | Required | Description |
-|----------|------|----------|-------------|
+| ---------- | ------ | ---------- | ------------- |
 | `sourceField` | string | **Yes** | Field name on the parent entity |
 | `targetField` | string | **Yes** | Field name on the child entity |
 | `isTriggerField` | boolean | No | If true, changes to this field trigger the cascade |
@@ -83,11 +83,12 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 
 Filter criteria uses a simple pipe-delimited format:
 
-```
+``` text
 field|operator|value;field2|operator2|value2
 ```
 
 **Supported Operators:**
+
 - `eq`, `equal`, `=` - Equal
 - `ne`, `notequal`, `!=` - Not Equal
 - `gt`, `greaterthan`, `>` - Greater Than
@@ -99,6 +100,7 @@ field|operator|value;field2|operator2|value2
 - `like` - Like (pattern matching)
 
 **Examples:**
+
 - `statecode|eq|0` - Active records only
 - `statecode|eq|0;revenue|gt|10000` - Active records with revenue > 10000
 - `primarycontactid|notnull|null` - Records with a primary contact
@@ -289,7 +291,7 @@ For each parent entity you want to monitor:
 ### Common Issues
 
 | Issue | Solution |
-|-------|----------|
+| ------- | ---------- |
 | Plugin not executing | Verify plugin step is registered on correct entity and message |
 | Fields not cascading | Check field names match exactly (case-sensitive) |
 | No child records updated | Verify filter criteria and relationship configuration |
@@ -300,7 +302,7 @@ For each parent entity you want to monitor:
 
 The plugin provides detailed trace logging:
 
-```
+``` text
 [timestamp] [INFO] [CascadeFieldsPlugin] [+0ms] === Plugin Execution Started ===
 [timestamp] [INFO] [CascadeFieldsPlugin] [+5ms] Execution Context - Message: Update | Stage: 40
 [timestamp] [INFO] [CascadeFieldsPlugin] [+12ms] Configuration loaded: Account to Contact
@@ -338,6 +340,7 @@ The plugin provides detailed trace logging:
 ## Support & Contributing
 
 For issues, questions, or contributions:
+
 - Review trace logs for detailed error information
 - Ensure configuration JSON is valid
 - Verify all required fields are present in configuration

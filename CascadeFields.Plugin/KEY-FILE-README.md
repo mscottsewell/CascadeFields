@@ -7,12 +7,14 @@ This file (`CascadeFields.snk`) contains the strong name key pair used to sign t
 ### Security Considerations
 
 **DO NOT:**
+
 - ❌ Commit this file to source control (it's in .gitignore)
 - ❌ Share this file publicly
 - ❌ Email or transmit this file insecurely
 - ❌ Store this file in cloud storage without encryption
 
 **DO:**
+
 - ✅ Keep this file secure and backed up in a safe location
 - ✅ Use the same key file across all environments for consistency
 - ✅ Store in a secure password manager or encrypted storage
@@ -21,6 +23,7 @@ This file (`CascadeFields.snk`) contains the strong name key pair used to sign t
 ### Why Strong Naming?
 
 Microsoft Dataverse **requires** all plugin assemblies to be strongly signed for security reasons:
+
 - Ensures assembly integrity
 - Prevents assembly tampering
 - Guarantees unique assembly identity
@@ -77,7 +80,8 @@ steps:
 ### Key File Location
 
 The key file must be located at:
-```
+
+``` text
 CascadeFields.Plugin\CascadeFields.snk
 ```
 
@@ -92,11 +96,11 @@ This path is referenced in `CascadeFields.Plugin.csproj`:
 
 ### Troubleshooting
 
-**Error: "Error signing output with public key from file 'CascadeFields.snk' -- Invalid public key"**
+#### Error: "Error signing output with public key from file 'CascadeFields.snk' -- Invalid public key"
 
 Solution: The key file is corrupted or invalid. Regenerate it using the sn.exe tool.
 
-**Error: "Could not find file 'CascadeFields.snk'"**
+#### Error: "Could not find file 'CascadeFields.snk'"
 
 Solution: Ensure the key file is in the correct location (`CascadeFields.Plugin\CascadeFields.snk`).
 
@@ -104,7 +108,7 @@ Solution: Ensure the key file is in the correct location (`CascadeFields.Plugin\
 
 After building with strong name signing, you should see:
 
-```
+``` text
 Build succeeded in X.Xs
   CascadeFields.Plugin net462 succeeded (X.Xs) → CascadeFields.Plugin\bin\Release\net462\CascadeFields.Plugin.dll
 ```

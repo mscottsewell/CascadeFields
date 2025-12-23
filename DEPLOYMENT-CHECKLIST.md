@@ -94,19 +94,22 @@ Use this checklist when deploying the CascadeFields plugin to ensure nothing is 
 
 ## Troubleshooting Reference
 
-### If plugin doesn't execute:
+### If plugin doesn't execute
+
 1. Check filtering attributes are set correctly
 2. Verify message and stage are correct (Update, PostOperation)
 3. Confirm entity name matches parent entity in config
 4. Check plugin is active (not disabled)
 
-### If child records not updated:
+### If child records not updated
+
 1. Verify filter criteria matches child records
 2. Check lookup/relationship field is populated correctly
 3. Confirm field names are correct (case-sensitive)
 4. Verify child records exist and are accessible
 
-### If errors occur:
+### If errors occur
+
 1. Check plugin trace logs for detailed error messages
 2. Verify JSON configuration is valid
 3. Confirm all required fields in configuration are present
@@ -127,7 +130,7 @@ If issues arise and rollback is needed:
 ## Sign-off
 
 | Role | Name | Date | Signature |
-|------|------|------|-----------|
+| ------ | ------ | ------ | ----------- |
 | Developer | | | |
 | Tester | | | |
 | System Admin | | | |

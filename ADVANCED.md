@@ -11,6 +11,7 @@ Combine multiple conditions using semicolon separation:
 ```
 
 This filters for records that are:
+
 - Active (statecode = 0)
 - AND have status reason = 1
 - AND created after January 1, 2024
@@ -527,7 +528,7 @@ Store configurations in source control:
 
 Maintain different configurations per environment:
 
-```
+``` text
 Configurations/
   Dev/
     account-to-contact.json

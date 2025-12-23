@@ -44,10 +44,10 @@ Copy the JSON content - you'll need it for plugin registration.
 1. Find the registered assembly in the tree
 2. Right-click **CascadeFieldsPlugin** > **Register New Step**
 
-### Step Configuration:
+### Step Configuration
 
 | Setting | Value |
-|---------|-------|
+| --------- | ------- |
 | Message | `Update` |
 | Primary Entity | Your parent entity (e.g., `account`) |
 | Event Pipeline Stage | `PostOperation` |
@@ -55,7 +55,8 @@ Copy the JSON content - you'll need it for plugin registration.
 | Unsecure Configuration | *Paste your JSON configuration here* |
 | Filtering Attributes | Select your trigger fields |
 
-### Important:
+### Important
+
 ✅ Click **Add** in Filtering Attributes section
 ✅ Select the fields that should trigger the plugin (your `isTriggerField` fields)
 
@@ -64,10 +65,10 @@ Copy the JSON content - you'll need it for plugin registration.
 1. In the same dialog, go to the **Images** section
 2. Click **Add** to add a new image
 
-### Image Configuration:
+### Image Configuration
 
 | Setting | Value |
-|---------|-------|
+| --------- | ------- |
 | Image Type | `PreImage` |
 | Name | `PreImage` |
 | Entity Alias | `PreImage` |
@@ -84,7 +85,7 @@ Copy the JSON content - you'll need it for plugin registration.
 
 ## 7. Monitor Execution
 
-### View Plugin Trace Logs:
+### View Plugin Trace Logs
 
 1. Go to **Settings** > **Plug-in Trace Log**
 2. Filter by Type Name: `CascadeFieldsPlugin`
@@ -96,7 +97,7 @@ Copy the JSON content - you'll need it for plugin registration.
    - "Update complete: X successful, 0 failed"
    - "Plugin Execution Completed Successfully"
 
-### Check System Jobs:
+### Check System Jobs
 
 1. Go to **Settings** > **System Jobs**
 2. Filter by:
@@ -107,18 +108,23 @@ Copy the JSON content - you'll need it for plugin registration.
 ## Common Setup Issues
 
 ### Issue: Plugin doesn't execute
+
 **Solution**: Verify filtering attributes match your trigger fields
 
 ### Issue: Configuration error
+
 **Solution**: Validate JSON using a JSON validator (jsonlint.com)
 
 ### Issue: No child records updated
-**Solution**: 
+
+**Solution**:
+
 - Check filter criteria matches your child records
 - Verify lookup field name is correct
 - Ensure child records exist and match filters
 
 ### Issue: Permission errors
+
 **Solution**: Ensure the user has update permissions on child entities
 
 ## Example Test Scenario
