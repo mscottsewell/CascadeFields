@@ -221,6 +221,8 @@ Cascade custom fields to multiple child entities with different filters:
 4. Build the solution in **Release** mode
 5. The compiled assembly will be in `CascadeFields.Plugin\bin\Release\net462\CascadeFields.Plugin.dll`
 
+**Note**: The assembly is strongly signed using `CascadeFields.snk`. This key file is required for Dataverse plugin deployment and is excluded from source control for security.
+
 ### Register the Plugin
 
 1. Open the **Plugin Registration Tool** and connect to your environment

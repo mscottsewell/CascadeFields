@@ -6,6 +6,8 @@
     <AssemblyName>CascadeFields.Plugin</AssemblyName>
     <RootNamespace>CascadeFields.Plugin</RootNamespace>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>CascadeFields.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <ItemGroup>

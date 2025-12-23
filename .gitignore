@@ -27,9 +27,13 @@ bld/
 **/packages/*
 !**/packages/build/
 
-# Others
+## Others
 *.log
 *.dll
 *.pdb
 *.cache
 *.manifest
+
+# Strong name key files (sensitive)
+*.snk
+*.pfx

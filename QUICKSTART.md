@@ -16,6 +16,8 @@ dotnet build -c Release
 The compiled plugin will be located at:
 `CascadeFields.Plugin\bin\Release\net462\CascadeFields.Plugin.dll`
 
+**Important**: The plugin is strongly signed as required by Dataverse. The `CascadeFields.snk` key file must be present in the project directory for the build to succeed.
+
 ## 2. Prepare Your Configuration
 
 Choose or create a configuration JSON file:
