@@ -1,0 +1,36 @@
+{
+  "id": "account-contact-cascade",
+  "name": "Cascade Account Fields to Contacts",
+  "parentEntity": "account",
+  "isActive": true,
+  "fieldMappings": [
+    {
+      "sourceField": "address1_city",
+      "targetField": "address1_city",
+      "isTriggerField": true
+    },
+    {
+      "sourceField": "address1_stateorprovince",
+      "targetField": "address1_stateorprovince",
+      "isTriggerField": true
+    },
+    {
+      "sourceField": "address1_postalcode",
+      "targetField": "address1_postalcode",
+      "isTriggerField": true
+    },
+    {
+      "sourceField": "telephone1",
+      "targetField": "telephone1",
+      "isTriggerField": false
+    }
+  ],
+  "relatedEntities": [
+    {
+      "entityName": "contact",
+      "useRelationship": false,
+      "lookupFieldName": "parentcustomerid",
+      "filterCriteria": "statecode|eq|0"
+    }
+  ]
+}
