@@ -1077,6 +1077,15 @@ namespace CascadeFields.Configurator
             var parentIsLookup = IsLookup(parent.AttributeType);
             var childIsLookup = IsLookup(child.AttributeType);
 
+            var parentIsText = IsText(parent.AttributeType);
+            var childIsText = IsText(child.AttributeType);
+
+            if (parentIsText && childIsText)
+            {
+                // Allow copying between single- and multi-line text
+                return true;
+            }
+
             if (parentIsLookup && childIsLookup)
             {
                 var overlap = parent.Targets.Intersect(child.Targets, StringComparer.OrdinalIgnoreCase).Any();
@@ -1095,6 +1104,11 @@ namespace CascadeFields.Configurator
         private bool IsLookup(AttributeTypeCode? type)
         {
             return type == AttributeTypeCode.Lookup || type == AttributeTypeCode.Customer || type == AttributeTypeCode.Owner;
+        }
+
+        private bool IsText(AttributeTypeCode? type)
+        {
+            return type == AttributeTypeCode.String || type == AttributeTypeCode.Memo;
         }
 
         private string BuildFilterFromView(ViewOption? view)

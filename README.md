@@ -88,6 +88,7 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 - For lookups, it uses the `name` on the `EntityReference` (or the formatted value) and falls back to the GUID if no name is present.
 - For option sets, it uses the formatted label when available; otherwise, it uses the numeric value.
 - Attribute metadata is cached per attribute to avoid repeated metadata calls; if metadata is unavailable, the raw value is used and a warning is logged.
+- If the resulting text exceeds the target field's max length, the plugin truncates to one character less than the limit and appends an ellipsis (…). A warning is logged when truncation occurs.
 
 Filter criteria uses a simple pipe-delimited format:
 

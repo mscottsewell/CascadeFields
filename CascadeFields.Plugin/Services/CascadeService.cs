@@ -19,13 +19,13 @@ namespace CascadeFields.Plugin.Services
     {
         private readonly IOrganizationService _service;
         private readonly PluginTracer _tracer;
-        private readonly Dictionary<string, AttributeTypeCode?> _attributeTypeCache;
+        private readonly Dictionary<string, AttributeMetadata> _attributeMetadataCache;
 
         public CascadeService(IOrganizationService service, PluginTracer tracer)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _tracer = tracer ?? throw new ArgumentNullException(nameof(tracer));
-            _attributeTypeCache = new Dictionary<string, AttributeTypeCode?>(StringComparer.OrdinalIgnoreCase);
+            _attributeMetadataCache = new Dictionary<string, AttributeMetadata>(StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -148,33 +148,29 @@ namespace CascadeFields.Plugin.Services
 
         private object GetMappedValueForTarget(Entity sourceEntity, FieldMapping mapping, string targetEntityName)
         {
-            var rawValue = sourceEntity[mapping.SourceField];
+            var mappedValue = sourceEntity[mapping.SourceField];
             var formattedValue = sourceEntity.FormattedValues != null && sourceEntity.FormattedValues.Contains(mapping.SourceField)
                 ? sourceEntity.FormattedValues[mapping.SourceField]
                 : null;
 
-            var targetAttributeType = GetTargetAttributeType(targetEntityName, mapping.TargetField);
+            var targetAttributeMetadata = GetTargetAttributeMetadata(targetEntityName, mapping.TargetField);
+            var targetAttributeType = targetAttributeMetadata?.AttributeType;
 
             if (targetAttributeType.HasValue && (targetAttributeType.Value == AttributeTypeCode.String || targetAttributeType.Value == AttributeTypeCode.Memo))
             {
-                // When targeting a text field, convert lookups/optionsets to display text
-                if (rawValue is EntityReference entityRef)
+                var textValue = ConvertToTextValue(mappedValue, formattedValue);
+                if (textValue == null)
                 {
-                    return !string.IsNullOrWhiteSpace(entityRef.Name)
-                        ? entityRef.Name
-                        : formattedValue ?? entityRef.Id.ToString();
+                    return null;
                 }
 
-                if (rawValue is OptionSetValue optionSet)
-                {
-                    return formattedValue ?? optionSet.Value.ToString();
-                }
+                return ApplyTruncationIfNeeded(textValue, targetAttributeMetadata, mapping.TargetField);
             }
 
-            return rawValue;
+            return mappedValue;
         }
 
-        private AttributeTypeCode? GetTargetAttributeType(string entityLogicalName, string attributeLogicalName)
+        private AttributeMetadata GetTargetAttributeMetadata(string entityLogicalName, string attributeLogicalName)
         {
             if (string.IsNullOrWhiteSpace(entityLogicalName) || string.IsNullOrWhiteSpace(attributeLogicalName))
             {
@@ -183,9 +179,9 @@ namespace CascadeFields.Plugin.Services
 
             var cacheKey = $"{entityLogicalName}:{attributeLogicalName}";
 
-            if (_attributeTypeCache.TryGetValue(cacheKey, out var cachedType))
+            if (_attributeMetadataCache.TryGetValue(cacheKey, out var cachedMetadata))
             {
-                return cachedType;
+                return cachedMetadata;
             }
 
             try
@@ -200,15 +196,75 @@ namespace CascadeFields.Plugin.Services
                 var response = (RetrieveAttributeResponse)_service.Execute(request);
                 var attributeMetadata = response?.AttributeMetadata;
 
-                _attributeTypeCache[cacheKey] = attributeMetadata?.AttributeType;
-                return attributeMetadata?.AttributeType;
+                if (attributeMetadata != null)
+                {
+                    _attributeMetadataCache[cacheKey] = attributeMetadata;
+                }
+
+                return attributeMetadata;
             }
             catch (Exception ex)
             {
                 _tracer.Warning($"Unable to retrieve attribute metadata for {entityLogicalName}.{attributeLogicalName}: {ex.Message}");
-                _attributeTypeCache[cacheKey] = null;
                 return null;
             }
+        }
+
+        private string ConvertToTextValue(object rawValue, string formattedValue)
+        {
+            if (rawValue == null) return null;
+
+            if (rawValue is EntityReference entityRef)
+            {
+                if (!string.IsNullOrWhiteSpace(entityRef.Name))
+                {
+                    return entityRef.Name;
+                }
+
+                return formattedValue ?? entityRef.Id.ToString();
+            }
+
+            if (rawValue is OptionSetValue optionSet)
+            {
+                return formattedValue ?? optionSet.Value.ToString();
+            }
+
+            return rawValue.ToString();
+        }
+
+        private string ApplyTruncationIfNeeded(string textValue, AttributeMetadata targetAttributeMetadata, string targetAttributeLogicalName)
+        {
+            if (string.IsNullOrEmpty(textValue) || targetAttributeMetadata == null)
+            {
+                return textValue;
+            }
+
+            int? maxLength = null;
+
+            if (targetAttributeMetadata is StringAttributeMetadata stringMetadata)
+            {
+                maxLength = stringMetadata.MaxLength;
+            }
+            else if (targetAttributeMetadata is MemoAttributeMetadata memoMetadata)
+            {
+                maxLength = memoMetadata.MaxLength;
+            }
+
+            if (!maxLength.HasValue || maxLength.Value <= 0)
+            {
+                return textValue;
+            }
+
+            if (textValue.Length <= maxLength.Value)
+            {
+                return textValue;
+            }
+
+            var truncatedLength = Math.Max(0, maxLength.Value - 1);
+            var truncatedText = (truncatedLength > 0 ? textValue.Substring(0, truncatedLength) : string.Empty) + "…";
+
+            _tracer.Warning($"Value for {targetAttributeLogicalName} truncated to {maxLength.Value} characters with ellipsis.");
+            return truncatedText;
         }
 
         private void CascadeToRelatedEntity(Guid parentId, Dictionary<string, object> values, 
