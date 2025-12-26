@@ -88,21 +88,30 @@ namespace CascadeFields.Configurator.Services
 
             foreach (var metadataId in entityIds)
             {
-                var request = new RetrieveEntityRequest
+                try
                 {
-                    MetadataId = metadataId,
-                    EntityFilters = EntityFilters.Entity,
-                    RetrieveAsIfPublished = true
-                };
+                    var request = new RetrieveEntityRequest
+                    {
+                        MetadataId = metadataId,
+                        EntityFilters = EntityFilters.Entity,
+                        RetrieveAsIfPublished = true
+                    };
 
-                var response = (RetrieveEntityResponse)_service.Execute(request);
-                var metadata = response.EntityMetadata;
-                entities.Add(new EntityOption
+                    var response = (RetrieveEntityResponse)_service.Execute(request);
+                    var metadata = response.EntityMetadata;
+                    entities.Add(new EntityOption
+                    {
+                        MetadataId = metadata.MetadataId ?? Guid.Empty,
+                        LogicalName = metadata.LogicalName,
+                        DisplayName = metadata.DisplayName?.UserLocalizedLabel?.Label ?? metadata.LogicalName
+                    });
+                }
+                catch (Exception)
                 {
-                    MetadataId = metadata.MetadataId ?? Guid.Empty,
-                    LogicalName = metadata.LogicalName,
-                    DisplayName = metadata.DisplayName?.UserLocalizedLabel?.Label ?? metadata.LogicalName
-                });
+                    // Skip invalid or inaccessible entity metadata IDs
+                    // (could be incorrect component type or deleted entity)
+                    continue;
+                }
             }
 
             return entities.OrderBy(e => e.DisplayName).ToList();
@@ -156,6 +165,11 @@ namespace CascadeFields.Configurator.Services
 
         public List<FormOption> GetFormsForEntity(Guid solutionId, string entityLogicalName)
         {
+            if (string.IsNullOrWhiteSpace(entityLogicalName))
+            {
+                return new List<FormOption>();
+            }
+            
             const int SystemFormComponentType = 60;
 
             var formIds = new List<Guid>();
@@ -235,6 +249,11 @@ namespace CascadeFields.Configurator.Services
 
         public (List<AttributeOption> parentAttributes, List<AttributeOption> childAttributes) GetAttributeOptions(string parentLogicalName, string childLogicalName)
         {
+            if (string.IsNullOrWhiteSpace(parentLogicalName) || string.IsNullOrWhiteSpace(childLogicalName))
+            {
+                return (new List<AttributeOption>(), new List<AttributeOption>());
+            }
+            
             var parent = RetrieveEntity(parentLogicalName, EntityFilters.Attributes);
             var child = RetrieveEntity(childLogicalName, EntityFilters.Attributes);
 
@@ -255,6 +274,11 @@ namespace CascadeFields.Configurator.Services
 
         private EntityMetadata RetrieveEntity(string logicalName, EntityFilters filters)
         {
+            if (string.IsNullOrWhiteSpace(logicalName))
+            {
+                throw new ArgumentException("Entity logical name cannot be null or empty", nameof(logicalName));
+            }
+            
             var request = new RetrieveEntityRequest
             {
                 LogicalName = logicalName,

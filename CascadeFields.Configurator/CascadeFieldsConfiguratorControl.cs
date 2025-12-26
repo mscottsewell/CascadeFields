@@ -43,6 +43,9 @@ namespace CascadeFields.Configurator
         private string? _currentAttributesKey;
         private string? _lastLookupLoadKey;
         private bool _suppressTabSync;
+        private bool _isRestoringSettings;
+        private bool _isLoading; // Prevent concurrent restore operations
+        private bool _eventsHooked; // Track whether event handlers have been attached
 
         private List<SolutionOption> _solutions = new List<SolutionOption>();
         private List<EntityOption> _entities = new List<EntityOption>();
@@ -60,6 +63,7 @@ namespace CascadeFields.Configurator
         private FormOption? _selectedSourceForm;
 
         private string? _selectedParentEntity;
+        private string _settingsKey = "default";
 
         public CascadeFieldsConfiguratorControl()
         {
@@ -69,24 +73,86 @@ namespace CascadeFields.Configurator
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            SettingsManager.Instance.TryLoad(GetType(), out _settings, null);
+            
+            if (_isLoading)
+            {
+                Log("[OnLoad] Already loading, skipping duplicate call");
+                return;
+            }
+            _isLoading = true;
+            Log("[OnLoad] Starting load sequence");
+            
+            _settingsKey = GetSettingsKey();
+            Log($"Loading settings with key: {_settingsKey}");
+            SettingsManager.Instance.TryLoad(GetType(), out _settings, _settingsKey);
+            Log($"[OnLoad] After TryLoad: SolutionId={_settings?.SolutionId}, UniqueName={_settings?.SolutionUniqueName}");
+            Log($"[OnLoad]   ChildEntity={_settings?.ChildEntityLogicalName}, Lookup={_settings?.LookupFieldLogicalName}");
+            Log($"[OnLoad]   ParentEntity={_settings?.ParentEntityLogicalName}, TargetForm={_settings?.TargetFormId}, SourceForm={_settings?.SourceFormId}");
             EnsureSettings();
             HookEvents();
             RefreshServices();
-            LoadSolutions();
-            RestoreSettings();
+            
+            // Only load solutions if UpdateConnection hasn't already done it
+            if (Service != null)
+            {
+                Log("[OnLoad] Service already available, skipping LoadSolutions (UpdateConnection handled it)");
+                _isLoading = false;
+            }
+            else
+            {
+                Log("[OnLoad] Service not available, calling LoadSolutions");
+                LoadSolutions();
+                // _isLoading will be cleared when restore completes in BindSourceForms
+            }
+            // RestoreSettings will be called after solutions load
+            
+            Log("[OnLoad] Completed load sequence");
         }
 
         public override void UpdateConnection(IOrganizationService newService, ConnectionDetail detail, string actionName, object parameter)
         {
             base.UpdateConnection(newService, detail, actionName, parameter);
+            
+            if (_isLoading)
+            {
+                Log("[UpdateConnection] Already loading, skipping duplicate call");
+                return;
+            }
+            _isLoading = true;
+            Log("[UpdateConnection] Starting load sequence");
+            
+            _settingsKey = GetSettingsKey(detail);
+            Log($"Loading settings for connection with key: {_settingsKey}");
+            SettingsManager.Instance.TryLoad(GetType(), out _settings, _settingsKey);
+            Log($"[UpdateConnection] After TryLoad: SolutionId={_settings?.SolutionId}, UniqueName={_settings?.SolutionUniqueName}");
+            Log($"[UpdateConnection]   ChildEntity={_settings?.ChildEntityLogicalName}, Lookup={_settings?.LookupFieldLogicalName}");
+            Log($"[UpdateConnection]   ParentEntity={_settings?.ParentEntityLogicalName}, TargetForm={_settings?.TargetFormId}, SourceForm={_settings?.SourceFormId}");
+            EnsureSettings();
+            RestoreSettings();
             RefreshServices();
+            LoadSolutions();
+            // _isLoading will be cleared when restore completes in BindSourceForms
+            
+            Log("[UpdateConnection] Started load sequence, waiting for async completion");
         }
 
         public override void ClosingPlugin(PluginCloseInfo info)
         {
-            SaveSettings();
-            base.ClosingPlugin(info);
+            try
+            {
+                Log($"[ClosingPlugin] INVOKED with key: {_settingsKey}");
+                SaveSettings();
+                Log("[ClosingPlugin] SaveSettings completed");
+            }
+            catch (Exception ex)
+            {
+                Log($"[ClosingPlugin] Exception in SaveSettings: {ex.Message}");
+            }
+            finally
+            {
+                Log("[ClosingPlugin] Calling base.ClosingPlugin");
+                base.ClosingPlugin(info);
+            }
         }
 
         private void RefreshServices()
@@ -100,7 +166,21 @@ namespace CascadeFields.Configurator
 
         private void HookEvents()
         {
-            _solutionCombo.SelectedIndexChanged += (s, e) => LoadEntities();
+            if (_eventsHooked)
+            {
+                Log("[HookEvents] Events already hooked, skipping");
+                return;
+            }
+            
+            Log("[HookEvents] Attaching event handlers");
+            _eventsHooked = true;
+            
+            _solutionCombo.SelectedIndexChanged += (s, e) => 
+            { 
+                var selected = _solutionCombo.SelectedItem as SolutionOption;
+                Log($"[Event] Solution selected: {selected?.FriendlyName} ({selected?.Id})");
+                LoadEntities();
+            };
             _entityCombo.SelectedIndexChanged += (s, e) => { LoadTargetForms(); LoadLookupFields(); };
             _targetFormCombo.SelectedIndexChanged += (s, e) => { OnTargetFormChanged(); };
             _lookupCombo.SelectedIndexChanged += (s, e) => LoadParentTargets();
@@ -290,11 +370,16 @@ namespace CascadeFields.Configurator
                 PostWorkCallBack = args =>
                 {
                     _solutions = args.Result as List<SolutionOption> ?? new List<SolutionOption>();
+                    
+                    _isRestoringSettings = true; // Prevent LoadEntities from overwriting settings
                     _solutionCombo.DataSource = _solutions;
                     _solutionCombo.DisplayMember = nameof(SolutionOption.FriendlyName);
                     _solutionCombo.ValueMember = nameof(SolutionOption.Id);
                     Log($"Loaded {_solutions.Count} unmanaged solutions");
+                    RestoreSettings();
                     RestoreSolutionSelection();
+                    // Don't clear _isRestoringSettings here - it will be cleared when the async restore chain completes
+                    
                     UpdateMappingHeaders();
                 }
             });
@@ -308,17 +393,41 @@ namespace CascadeFields.Configurator
             }
 
             var solution = (SolutionOption)_solutionCombo.SelectedItem;
-            _settings.SolutionId = solution.Id;
-            _settings.SolutionUniqueName = solution.UniqueName;
+            
+            // Only update settings if we're not restoring (user is actively selecting)
+            if (!_isRestoringSettings)
+            {
+                Log($"[LoadEntities] User selected solution, updating settings: {solution.FriendlyName}");
+                _settings.SolutionId = solution.Id;
+                _settings.SolutionUniqueName = solution.UniqueName;
+            }
+            else
+            {
+                Log($"[LoadEntities] Restoring - NOT overwriting settings. Current: {solution.FriendlyName}");
+            }
 
             ResetDependentSelections();
 
+            Log($"[LoadEntities] Starting WorkAsync to load entities for solution: {solution.Id}");
             WorkAsync(new WorkAsyncInfo
             {
                 Message = "Loading entities from solution...",
-                Work = (worker, args) => { args.Result = _metadataService.GetEntitiesForSolution(solution.Id); },
+                Work = (worker, args) => 
+                { 
+                    Log($"[LoadEntities.Work] Calling GetEntitiesForSolution");
+                    args.Result = _metadataService.GetEntitiesForSolution(solution.Id);
+                    Log($"[LoadEntities.Work] GetEntitiesForSolution completed");
+                },
                 PostWorkCallBack = args =>
                 {
+                    if (args.Error != null)
+                    {
+                        Log($"[LoadEntities.PostWork] ERROR: {args.Error.Message}");
+                        Log($"[LoadEntities.PostWork] Stack: {args.Error.StackTrace}");
+                        return;
+                    }
+                    
+                    Log($"[LoadEntities.PostWork] Processing results");
                     _entities = args.Result as List<EntityOption> ?? new List<EntityOption>();
                     _entityCombo.DataSource = _entities;
                     _entityCombo.DisplayMember = nameof(EntityOption.DisplayLabel);
@@ -337,36 +446,56 @@ namespace CascadeFields.Configurator
 
         private void ResetDependentSelections()
         {
-            _formCache.Clear();
-            _lastLookupLoadKey = null;
-            _lastLoadedAttributesKey = null;
-            _currentAttributesKey = null;
+            Log($"[ResetDependentSelections] CLEARING all dependent controls - IsRestoring: {_isRestoringSettings}");
+            
+            try
+            {
+                Log("[ResetDependentSelections] Clearing form cache");
+                _formCache.Clear();
+                _lastLookupLoadKey = null;
+                _lastLoadedAttributesKey = null;
+                _currentAttributesKey = null;
 
-            _entities = new List<EntityOption>();
-            _entityCombo.DataSource = null;
-            _entityCombo.Enabled = false;
+                Log("[ResetDependentSelections] Clearing entities");
+                _entities = new List<EntityOption>();
+                _entityCombo.DataSource = null;
+                _entityCombo.Enabled = false;
 
-            _targetForms = new List<FormOption>();
-            _targetFormCombo.DataSource = null;
-            _selectedTargetForm = null;
-            _targetFormCombo.Enabled = false;
+                Log("[ResetDependentSelections] Clearing target forms");
+                _targetForms = new List<FormOption>();
+                _targetFormCombo.DataSource = null;
+                _selectedTargetForm = null;
+                _targetFormCombo.Enabled = false;
 
-            _lookups = new List<LookupFieldOption>();
-            _lookupCombo.DataSource = null;
-            _lookupCombo.Enabled = false;
+                Log("[ResetDependentSelections] Clearing lookups");
+                _lookups = new List<LookupFieldOption>();
+                _lookupCombo.DataSource = null;
+                _lookupCombo.Enabled = false;
 
-            _parentTargetCombo.DataSource = null;
-            _parentTabs.TabPages.Clear();
-            _selectedParentEntity = null;
-            _parentTargetCombo.Enabled = false;
+                Log("[ResetDependentSelections] Clearing parent targets");
+                _parentTargetCombo.DataSource = null;
+                _parentTabs.TabPages.Clear();
+                _selectedParentEntity = null;
+                _parentTargetCombo.Enabled = false;
 
-            _sourceForms = new List<FormOption>();
-            _sourceFormCombo.DataSource = null;
-            _selectedSourceForm = null;
-            _sourceFormCombo.Enabled = false;
+                Log("[ResetDependentSelections] Clearing source forms");
+                _sourceForms = new List<FormOption>();
+                _sourceFormCombo.DataSource = null;
+                _selectedSourceForm = null;
+                _sourceFormCombo.Enabled = false;
 
-            _mappingGrid.Rows.Clear();
-            UpdateConfigurationPreview();
+                Log("[ResetDependentSelections] Clearing mappings");
+                _mappingGrid.Rows.Clear();
+                Log("[ResetDependentSelections] Updating preview");
+                UpdateConfigurationPreview();
+                Log("[ResetDependentSelections] COMPLETED successfully");
+            }
+            catch (Exception ex)
+            {
+                Log($"[ResetDependentSelections] EXCEPTION: {ex.Message}");
+                Log($"[ResetDependentSelections] Stack: {ex.StackTrace}");
+                throw;
+            }
         }
 
         private void LoadTargetForms()
@@ -429,8 +558,11 @@ namespace CascadeFields.Configurator
 
         private void LoadSourceForms()
         {
+            Log($"[LoadSourceForms] Entry - ParentEntity: '{_selectedParentEntity}', SolutionId: {_settings.SolutionId}");
+            
             if (_metadataService == null || string.IsNullOrWhiteSpace(_selectedParentEntity))
             {
+                Log("[LoadSourceForms] Skipping - metadataService or selectedParentEntity is null/empty");
                 _sourceFormCombo.DataSource = null;
                 _selectedSourceForm = null;
                 return;
@@ -470,18 +602,45 @@ namespace CascadeFields.Configurator
             _sourceFormCombo.DisplayMember = nameof(FormOption.DisplayLabel);
             _sourceFormCombo.ValueMember = nameof(FormOption.Id);
             _sourceFormCombo.Enabled = _sourceForms.Count > 0;
+            Log($"[BindSourceForms] Forms count: {_sourceForms.Count}, Enabled: {_sourceFormCombo.Enabled}");
 
             if (_settings.SourceFormId.HasValue)
             {
                 var existing = _sourceForms.FirstOrDefault(f => f.Id == _settings.SourceFormId.Value);
                 if (existing != null)
                 {
+                    Log($"[BindSourceForms] Restoring source form: {existing.DisplayLabel}");
                     _sourceFormCombo.SelectedItem = existing;
+                    _sourceFormCombo.Invalidate();
+                    _sourceFormCombo.Update();
+                }
+                else
+                {
+                    Log($"[BindSourceForms] Source form not found: {_settings.SourceFormId}");
                 }
             }
 
             _selectedSourceForm = _sourceFormCombo.SelectedItem as FormOption;
+            Log($"[BindSourceForms] SelectedItem: {_selectedSourceForm?.DisplayLabel}");
             RebindAttributesForForms();
+            
+            // Clear loading flag now that the complete restore chain has finished
+            if (_isLoading)
+            {
+                _isLoading = false;
+                _isRestoringSettings = false; // Also clear restoring flag
+                Log("[BindSourceForms] Restore chain completed, cleared _isLoading and _isRestoringSettings flags");
+                
+                // Now that restore is complete, sync the restored values back to settings
+                // so they'll be available when SaveSettings is called
+                _settings.ParentEntityLogicalName = _selectedParentEntity;
+                _settings.SourceFormId = _selectedSourceForm?.Id;
+                Log($"[BindSourceForms] Synced restored values: ParentEntity={_selectedParentEntity}, SourceForm={_selectedSourceForm?.Id}");
+                
+                // Attach event handlers now that restore is complete
+                HookEvents();
+                Log("[BindSourceForms] Event handlers attached after restore completion");
+            }
         }
 
         private void LoadLookupFields()
@@ -547,6 +706,7 @@ namespace CascadeFields.Configurator
         {
             if (_lookupCombo.SelectedItem is not LookupFieldOption lookup)
             {
+                Log("[LoadParentTargets] No lookup selected, clearing parent/source combos");
                 _parentTargetCombo.DataSource = null;
                 _parentTabs.TabPages.Clear();
                 _parentTargetCombo.Enabled = false;
@@ -558,6 +718,7 @@ namespace CascadeFields.Configurator
             var targets = lookup.Targets?.ToList() ?? new List<string>();
             if (targets.Count == 0)
             {
+                Log("[LoadParentTargets] Lookup has no targets, clearing parent/source combos");
                 _parentTargetCombo.DataSource = null;
                 _parentTabs.TabPages.Clear();
                 _parentTargetCombo.Enabled = false;
@@ -591,13 +752,26 @@ namespace CascadeFields.Configurator
             _parentTargetCombo.DisplayMember = nameof(EntityOption.DisplayLabel);
             _parentTargetCombo.ValueMember = nameof(EntityOption.LogicalName);
             _parentTargetCombo.Enabled = targetOptions.Count > 0;
+            Log($"[LoadParentTargets] Target options count: {targetOptions.Count}, Enabled: {_parentTargetCombo.Enabled}");
 
             var restore = _settings.ParentEntityLogicalName;
+            Log($"[LoadParentTargets] Restoring parent entity: {restore}");
             var match = targetOptions.FirstOrDefault(t => t.LogicalName.Equals(restore, StringComparison.OrdinalIgnoreCase)) ?? targetOptions.First();
             var previousParent = _selectedParentEntity;
+            Log($"[LoadParentTargets] Match found: {match.LogicalName}, setting SelectedItem");
             _parentTargetCombo.SelectedItem = match;
+            _parentTargetCombo.Text = match.DisplayLabel; // Force text display
+            _parentTargetCombo.Invalidate(); // Force repaint
+            _parentTargetCombo.Update(); // Process paint messages immediately
+            _parentTargetCombo.Parent?.Invalidate(); // Force parent repaint
+            Log($"[LoadParentTargets] After set, SelectedItem = {(_parentTargetCombo.SelectedItem as EntityOption)?.LogicalName}, Text = {_parentTargetCombo.Text}");
             _selectedParentEntity = match.LogicalName;
-            _settings.ParentEntityLogicalName = _selectedParentEntity;
+            
+            // Only update settings if not in restore mode
+            if (!_isRestoringSettings)
+            {
+                _settings.ParentEntityLogicalName = _selectedParentEntity;
+            }
             BuildParentTabs(targetOptions);
             SelectParentTab(_selectedParentEntity);
             if (!string.Equals(previousParent, _selectedParentEntity, StringComparison.OrdinalIgnoreCase))
@@ -832,20 +1006,24 @@ namespace CascadeFields.Configurator
 
         private void UpdateConfigurationPreview()
         {
+            Log("[UpdateConfigurationPreview] Entry");
             try
             {
                 var config = BuildPreviewConfiguration();
                 if (config == null)
                 {
                     _configurationPreview.Text = "Select a solution, child entity, lookup, and mappings to preview configuration.";
+                    Log("[UpdateConfigurationPreview] Config is null, showing default message");
                     return;
                 }
 
                 _configurationPreview.Text = JsonConvert.SerializeObject(config, Formatting.Indented);
+                Log("[UpdateConfigurationPreview] Config serialized successfully");
             }
             catch (Exception ex)
             {
                 _configurationPreview.Text = $"Unable to build configuration preview: {ex.Message}";
+                Log($"[UpdateConfigurationPreview] Exception: {ex.Message}");
             }
         }
 
@@ -1150,40 +1328,106 @@ namespace CascadeFields.Configurator
             _assemblyPath.Text = _settings.AssemblyPath ?? GuessDefaultAssemblyPath();
         }
 
+        private void ClearRestoreFlags()
+        {
+            if (_isLoading || _isRestoringSettings)
+            {
+                _isLoading = false;
+                _isRestoringSettings = false;
+                Log("[ClearRestoreFlags] Cleared _isLoading and _isRestoringSettings flags (restore chain ended early)");
+            }
+        }
+
         private void RestoreSolutionSelection()
         {
+            Log($"[RestoreSolutionSelection] Total solutions loaded: {_solutions.Count}");
+            foreach (var sol in _solutions)
+            {
+                Log($"  - {sol.FriendlyName} ({sol.Id})");
+            }
+
             if (_settings.SolutionId.HasValue)
             {
+                Log($"[RestoreSolutionSelection] Looking for saved solution: {_settings.SolutionUniqueName} ({_settings.SolutionId})");
                 var solution = _solutions.FirstOrDefault(s => s.Id == _settings.SolutionId.Value);
                 if (solution != null)
                 {
+                    Log($"[RestoreSolutionSelection] Found solution in list, selecting: {solution.FriendlyName}");
                     _solutionCombo.SelectedItem = solution;
+                    Log($"[RestoreSolutionSelection] SelectedItem set to: {_solutionCombo.SelectedItem}");
+                    // Explicitly trigger load in case event didn't fire
+                    LoadEntities();
                 }
+                else
+                {
+                    Log($"[RestoreSolutionSelection] Solution not found in loaded solutions list");
+                }
+            }
+            else
+            {
+                Log("[RestoreSolutionSelection] No saved solution to restore");
             }
         }
 
         private void RestoreEntitySelection()
         {
+            Log($"[RestoreEntitySelection] Entry - Looking for entity: {_settings.ChildEntityLogicalName}");
             if (!string.IsNullOrWhiteSpace(_settings.ChildEntityLogicalName))
             {
+                Log($"[RestoreEntitySelection] Searching in {_entities.Count} entities");
                 var entity = _entities.FirstOrDefault(e => e.LogicalName == _settings.ChildEntityLogicalName);
                 if (entity != null)
                 {
+                    Log($"[RestoreEntitySelection] Found entity, setting SelectedItem: {entity.LogicalName}");
                     _entityCombo.SelectedItem = entity;
+                    Log($"[RestoreEntitySelection] After set, SelectedItem = {(_entityCombo.SelectedItem as EntityOption)?.LogicalName}");
+                    // Explicitly trigger load in case event didn't fire
+                    LoadTargetForms();
+                    LoadLookupFields();
                 }
+                else
+                {
+                    Log($"[RestoreEntitySelection] Entity not found in list");
+                    // Entity not found, so restore chain ends here - clear flags
+                    ClearRestoreFlags();
+                }
+            }
+            else
+            {
+                Log($"[RestoreEntitySelection] No entity to restore (settings value is empty)");
+                // Nothing to restore, so restore chain ends here - clear flags
+                ClearRestoreFlags();
             }
         }
 
         private void RestoreLookupSelection()
         {
+            Log($"[RestoreLookupSelection] Entry - Looking for lookup: {_settings.LookupFieldLogicalName}");
             if (!string.IsNullOrWhiteSpace(_settings.LookupFieldLogicalName))
             {
                 var source = _lookupCombo.DataSource as List<LookupFieldOption> ?? _lookups;
+                Log($"[RestoreLookupSelection] Searching in {source.Count} lookups");
                 var lookup = source.FirstOrDefault(l => l.LogicalName == _settings.LookupFieldLogicalName);
                 if (lookup != null)
                 {
+                    Log($"[RestoreLookupSelection] Found lookup, setting SelectedItem: {lookup.LogicalName}");
                     _lookupCombo.SelectedItem = lookup;
+                    Log($"[RestoreLookupSelection] After set, SelectedItem = {(_lookupCombo.SelectedItem as LookupFieldOption)?.LogicalName}");
+                    // Explicitly trigger load in case event didn't fire
+                    LoadParentTargets();
                 }
+                else
+                {
+                    Log($"[RestoreLookupSelection] Lookup not found in list");
+                    // Lookup not found, so restore chain ends here - clear flags
+                    ClearRestoreFlags();
+                }
+            }
+            else
+            {
+                Log($"[RestoreLookupSelection] No lookup to restore (settings value is empty)");
+                // Nothing to restore, so restore chain ends here - clear flags
+                ClearRestoreFlags();
             }
         }
 
@@ -1275,21 +1519,38 @@ namespace CascadeFields.Configurator
 
         private void SaveSettings()
         {
-            EnsureSettings();
-            _settings.AssemblyPath = _assemblyPath.Text;
-            _settings.ChildEntityLogicalName = (_entityCombo.SelectedItem as EntityOption)?.LogicalName;
-            _settings.LookupFieldLogicalName = (_lookupCombo.SelectedItem as LookupFieldOption)?.LogicalName;
-            _settings.ParentEntityLogicalName = _selectedParentEntity;
-            _settings.TargetFormId = (_targetFormCombo.SelectedItem as FormOption)?.Id;
-            _settings.SourceFormId = (_sourceFormCombo.SelectedItem as FormOption)?.Id;
-            _settings.LastMappings = ReadMappings().Select(m => new FieldMappingSetting
+            try
             {
-                ParentField = m.SourceField,
-                ChildField = m.TargetField,
-                IsTrigger = m.IsTriggerField
-            }).ToList();
+                Log("[SaveSettings] ENTRY");
+                EnsureSettings();
+                var selectedSolution = _solutionCombo.SelectedItem as SolutionOption;
+                Log($"[SaveSettings] SelectedItem: {selectedSolution?.FriendlyName} ({selectedSolution?.Id})");
+                Log($"[SaveSettings] SelectedIndex: {_solutionCombo.SelectedIndex}");
+                
+                _settings.SolutionId = selectedSolution?.Id;
+                _settings.SolutionUniqueName = selectedSolution?.UniqueName;
+                _settings.AssemblyPath = _assemblyPath.Text;
+                _settings.ChildEntityLogicalName = (_entityCombo.SelectedItem as EntityOption)?.LogicalName;
+                _settings.LookupFieldLogicalName = (_lookupCombo.SelectedItem as LookupFieldOption)?.LogicalName;
+                _settings.ParentEntityLogicalName = _selectedParentEntity;
+                _settings.TargetFormId = (_targetFormCombo.SelectedItem as FormOption)?.Id;
+                _settings.SourceFormId = (_sourceFormCombo.SelectedItem as FormOption)?.Id;
+                _settings.LastMappings = ReadMappings().Select(m => new FieldMappingSetting
+                {
+                    ParentField = m.SourceField,
+                    ChildField = m.TargetField,
+                    IsTrigger = m.IsTriggerField
+                }).ToList();
 
-            SettingsManager.Instance.Save(GetType(), _settings, null);
+                Log($"[SaveSettings] About to call SettingsManager.Save with key: {_settingsKey}");
+                SettingsManager.Instance.Save(GetType(), _settings, _settingsKey);
+                Log("[SaveSettings] SUCCESS - Settings saved");
+            }
+            catch (Exception ex)
+            {
+                Log($"[SaveSettings] EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+                throw;
+            }
         }
 
         private void EnsureSettings()
@@ -1313,6 +1574,37 @@ namespace CascadeFields.Configurator
             }
 
             _logBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+        }
+
+        private string GetSettingsKey(ConnectionDetail? detail = null)
+        {
+            detail ??= ConnectionDetail;
+            
+            // Use ConnectionId as primary key for stable connection-specific settings
+            var key = detail?.ConnectionId?.ToString();
+
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                key = detail?.ConnectionName;
+            }
+
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                string? host = null;
+                var url = detail?.OrganizationServiceUrl;
+                if (!string.IsNullOrWhiteSpace(url) && Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                {
+                    host = uri.Host;
+                }
+                key = host;
+            }
+
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                key = "default";
+            }
+
+            return key!;
         }
     }
 }
