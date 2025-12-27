@@ -14,8 +14,15 @@ namespace CascadeFields.Configurator.Controls
         private Button btnUpdatePlugin;
         private Button btnPublish;
         private Button btnClearSession;
-        private SplitContainer splitContainer;
-        private TableLayoutPanel leftLayout;
+        private SplitContainer splitContainerMain;
+        private SplitContainer splitContainerLeft;
+        private SplitContainer splitContainerRight;
+        private TableLayoutPanel leftUpperLayout;
+        private TabControl tabControlLeftLower;
+        private TabPage tabLog;
+        private TabPage tabJson;
+        private TabControl tabControlRightUpper;
+        private Panel panelRightLower;
         private Label lblSolution;
         private ComboBox cmbSolution;
         private Label lblParentEntity;
@@ -24,19 +31,15 @@ namespace CascadeFields.Configurator.Controls
         private ComboBox cmbParentForm;
         private Label lblChildEntity;
         private ComboBox cmbChildEntity;
-        private Label lblChildForm;
-        private ComboBox cmbChildForm;
-        private Label lblLog;
         private TextBox txtLog;
-        private TabControl tabControl;
-        private TabPage tabMappings;
-        private TabPage tabJson;
+        private TextBox txtJsonPreview;
         private DataGridView gridMappings;
         private DataGridViewComboBoxColumn colSourceField;
         private DataGridViewComboBoxColumn colTargetField;
         private DataGridViewCheckBoxColumn colTrigger;
         private DataGridViewButtonColumn colDelete;
-        private TextBox txtJsonPreview;
+        private FilterCriteriaControl filterControl;
+        private CheckBox chkEnableTracing;
 
         /// <summary>
         ///  Clean up any resources being used.
@@ -61,8 +64,9 @@ namespace CascadeFields.Configurator.Controls
             btnUpdatePlugin = new Button();
             btnPublish = new Button();
             btnClearSession = new Button();
-            splitContainer = new SplitContainer();
-            leftLayout = new TableLayoutPanel();
+            splitContainerMain = new SplitContainer();
+            splitContainerLeft = new SplitContainer();
+            leftUpperLayout = new TableLayoutPanel();
             lblSolution = new Label();
             cmbSolution = new ComboBox();
             lblParentEntity = new Label();
@@ -71,29 +75,41 @@ namespace CascadeFields.Configurator.Controls
             cmbParentForm = new ComboBox();
             lblChildEntity = new Label();
             cmbChildEntity = new ComboBox();
-            lblChildForm = new Label();
-            cmbChildForm = new ComboBox();
-            lblLog = new Label();
+            tabControlLeftLower = new TabControl();
+            tabLog = new TabPage();
             txtLog = new TextBox();
-            tabControl = new TabControl();
-            tabMappings = new TabPage();
+            tabJson = new TabPage();
+            txtJsonPreview = new TextBox();
+            splitContainerRight = new SplitContainer();
+            tabControlRightUpper = new TabControl();
+            panelRightLower = new Panel();
+            filterControl = new FilterCriteriaControl();
+            chkEnableTracing = new CheckBox();
             gridMappings = new DataGridView();
             colSourceField = new DataGridViewComboBoxColumn();
             colTargetField = new DataGridViewComboBoxColumn();
             colTrigger = new DataGridViewCheckBoxColumn();
             colDelete = new DataGridViewButtonColumn();
-            tabJson = new TabPage();
-            txtJsonPreview = new TextBox();
             ribbonPanel.SuspendLayout();
-            ((ISupportInitialize)splitContainer).BeginInit();
-            splitContainer.Panel1.SuspendLayout();
-            splitContainer.Panel2.SuspendLayout();
-            splitContainer.SuspendLayout();
-            leftLayout.SuspendLayout();
-            tabControl.SuspendLayout();
-            tabMappings.SuspendLayout();
-            ((ISupportInitialize)gridMappings).BeginInit();
+            ((ISupportInitialize)splitContainerMain).BeginInit();
+            splitContainerMain.Panel1.SuspendLayout();
+            splitContainerMain.Panel2.SuspendLayout();
+            splitContainerMain.SuspendLayout();
+            ((ISupportInitialize)splitContainerLeft).BeginInit();
+            splitContainerLeft.Panel1.SuspendLayout();
+            splitContainerLeft.Panel2.SuspendLayout();
+            splitContainerLeft.SuspendLayout();
+            leftUpperLayout.SuspendLayout();
+            tabControlLeftLower.SuspendLayout();
+            tabLog.SuspendLayout();
             tabJson.SuspendLayout();
+            ((ISupportInitialize)splitContainerRight).BeginInit();
+            splitContainerRight.Panel1.SuspendLayout();
+            splitContainerRight.Panel2.SuspendLayout();
+            splitContainerRight.SuspendLayout();
+            tabControlRightUpper.SuspendLayout();
+            panelRightLower.SuspendLayout();
+            ((ISupportInitialize)gridMappings).BeginInit();
             SuspendLayout();
             // 
             // ribbonPanel
@@ -147,105 +163,152 @@ namespace CascadeFields.Configurator.Controls
             btnClearSession.AutoSize = true;
             btnClearSession.Margin = new Padding(4);
             // 
-            // splitContainer
+            // splitContainerMain
             // 
-            splitContainer.Dock = DockStyle.Fill;
-            splitContainer.SplitterDistance = 420;
-            splitContainer.Panel1.Controls.Add(leftLayout);
-            splitContainer.Panel2.Controls.Add(tabControl);
-            // 
-            // leftLayout
-            // 
-            leftLayout.ColumnCount = 2;
-            leftLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35F));
-            leftLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65F));
-            leftLayout.Dock = DockStyle.Fill;
-            leftLayout.Padding = new Padding(8);
-            leftLayout.RowCount = 8;
-            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
-            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 12F));
-            leftLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
-            leftLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-            leftLayout.Controls.Add(lblSolution, 0, 0);
-            leftLayout.Controls.Add(cmbSolution, 1, 0);
-            leftLayout.Controls.Add(lblParentEntity, 0, 1);
-            leftLayout.Controls.Add(cmbParentEntity, 1, 1);
-            leftLayout.Controls.Add(lblParentForm, 0, 2);
-            leftLayout.Controls.Add(cmbParentForm, 1, 2);
-            leftLayout.Controls.Add(lblChildEntity, 0, 3);
-            leftLayout.Controls.Add(cmbChildEntity, 1, 3);
-            leftLayout.Controls.Add(lblChildForm, 0, 4);
-            leftLayout.Controls.Add(cmbChildForm, 1, 4);
-            leftLayout.Controls.Add(lblLog, 0, 6);
-            leftLayout.SetColumnSpan(lblLog, 2);
-            leftLayout.Controls.Add(txtLog, 0, 7);
-            leftLayout.SetColumnSpan(txtLog, 2);
+            splitContainerMain.Dock = DockStyle.Fill;
+            splitContainerMain.SplitterDistance = 420;
+            
+            // Create a panel for left side with fixed controls at top
+            var leftPanel = new Panel { Dock = DockStyle.Fill };
+            
+            // Add fixed layout for all entity/form selectors at top
+            var fixedLayout = new TableLayoutPanel
+            {
+                ColumnCount = 2,
+                Dock = DockStyle.Top,
+                AutoSize = true,
+                Padding = new Padding(8)
+            };
+            fixedLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35F));
+            fixedLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65F));
+            fixedLayout.RowCount = 4;
+            fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
+            fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
+            fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
+            fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
+            fixedLayout.Controls.Add(lblSolution, 0, 0);
+            fixedLayout.Controls.Add(cmbSolution, 1, 0);
+            fixedLayout.Controls.Add(lblParentEntity, 0, 1);
+            fixedLayout.Controls.Add(cmbParentEntity, 1, 1);
+            fixedLayout.Controls.Add(lblParentForm, 0, 2);
+            fixedLayout.Controls.Add(cmbParentForm, 1, 2);
+            fixedLayout.Controls.Add(lblChildEntity, 0, 3);
+            fixedLayout.Controls.Add(cmbChildEntity, 1, 3);
+            
+            // Add tab control directly below the fixed header (no splitter needed for left side)
+            tabControlLeftLower.Dock = DockStyle.Fill;
+            
+            leftPanel.Controls.Add(tabControlLeftLower);
+            leftPanel.Controls.Add(fixedLayout);
+            
+            splitContainerMain.Panel1.Controls.Add(leftPanel);
+            splitContainerMain.Panel2.Controls.Add(splitContainerRight);
+            
+            // Remove old leftUpperLayout references
+            // leftUpperLayout is no longer needed
             // 
             // labels and combos
             // 
             lblSolution.Text = "Solution";
-            lblSolution.Dock = DockStyle.Fill;
+            lblSolution.Anchor = AnchorStyles.Left;
+            lblSolution.AutoSize = true;
             lblSolution.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
 
-            cmbSolution.Dock = DockStyle.Fill;
+            cmbSolution.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             cmbSolution.DropDownStyle = ComboBoxStyle.DropDownList;
 
             lblParentEntity.Text = "Parent Entity";
-            lblParentEntity.Dock = DockStyle.Fill;
+            lblParentEntity.Anchor = AnchorStyles.Left;
+            lblParentEntity.AutoSize = true;
             lblParentEntity.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
 
-            cmbParentEntity.Dock = DockStyle.Fill;
+            cmbParentEntity.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             cmbParentEntity.DropDownStyle = ComboBoxStyle.DropDownList;
 
             lblParentForm.Text = "Parent Form (optional)";
-            lblParentForm.Dock = DockStyle.Fill;
+            lblParentForm.Anchor = AnchorStyles.Left;
+            lblParentForm.AutoSize = true;
             lblParentForm.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
 
-            cmbParentForm.Dock = DockStyle.Fill;
+            cmbParentForm.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             cmbParentForm.DropDownStyle = ComboBoxStyle.DropDownList;
 
             lblChildEntity.Text = "Child Entity";
-            lblChildEntity.Dock = DockStyle.Fill;
+            lblChildEntity.Anchor = AnchorStyles.Left;
+            lblChildEntity.AutoSize = true;
             lblChildEntity.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
 
-            cmbChildEntity.Dock = DockStyle.Fill;
+            cmbChildEntity.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             cmbChildEntity.DropDownStyle = ComboBoxStyle.DropDownList;
 
-            lblChildForm.Text = "Child Form (optional)";
-            lblChildForm.Dock = DockStyle.Fill;
-            lblChildForm.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            // 
+            // tabControlLeftLower
+            // 
+            tabControlLeftLower.Dock = DockStyle.Fill;
+            tabControlLeftLower.Controls.Add(tabLog);
+            tabControlLeftLower.Controls.Add(tabJson);
 
-            cmbChildForm.Dock = DockStyle.Fill;
-            cmbChildForm.DropDownStyle = ComboBoxStyle.DropDownList;
-
-            lblLog.Text = "Log";
-            lblLog.Dock = DockStyle.Fill;
-            lblLog.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
-            lblLog.Margin = new Padding(0, 4, 0, 0);
+            // 
+            // tabLog
+            // 
+            tabLog.Text = "Log";
+            tabLog.Padding = new Padding(4);
+            tabLog.Controls.Add(txtLog);
 
             txtLog.Dock = DockStyle.Fill;
             txtLog.Multiline = true;
             txtLog.ScrollBars = ScrollBars.Vertical;
             txtLog.ReadOnly = true;
-            txtLog.Margin = new Padding(0, 2, 0, 0);
 
             // 
-            // tabControl
+            // tabJson
             // 
-            tabControl.Dock = DockStyle.Fill;
-            tabControl.Controls.Add(tabMappings);
-            tabControl.Controls.Add(tabJson);
+            tabJson.Text = "JSON Preview";
+            tabJson.Padding = new Padding(4);
+            tabJson.Controls.Add(txtJsonPreview);
+
+            txtJsonPreview.Dock = DockStyle.Fill;
+            txtJsonPreview.Multiline = true;
+            txtJsonPreview.ScrollBars = ScrollBars.Both;
+            txtJsonPreview.ReadOnly = true;
+            txtJsonPreview.Font = new System.Drawing.Font("Consolas", 9F);
 
             // 
-            // tabMappings
+            // splitContainerRight (Upper 70% / Lower 30%)
             // 
-            tabMappings.Text = "Field Mappings";
-            tabMappings.Padding = new Padding(4);
-            tabMappings.Controls.Add(gridMappings);
+            splitContainerRight.Dock = DockStyle.Fill;
+            splitContainerRight.Orientation = Orientation.Horizontal;
+            splitContainerRight.SplitterDistance = 420;
+            splitContainerRight.Panel1.Controls.Add(tabControlRightUpper);
+            splitContainerRight.Panel2.Controls.Add(panelRightLower);
+
+            // 
+            // tabControlRightUpper
+            // 
+            tabControlRightUpper.Dock = DockStyle.Fill;
+            // Child entity tabs will be added dynamically
+
+            // 
+            // panelRightLower
+            // 
+            panelRightLower.Dock = DockStyle.Fill;
+            panelRightLower.Padding = new Padding(8);
+            panelRightLower.Controls.Add(filterControl);
+            panelRightLower.Controls.Add(chkEnableTracing);
+
+            // 
+            // chkEnableTracing
+            // 
+            chkEnableTracing.Dock = DockStyle.Bottom;
+            chkEnableTracing.Text = "Enable Detailed Tracing (disable in production for reduced log verbosity)";
+            chkEnableTracing.Checked = true;
+            chkEnableTracing.Height = 30;
+            chkEnableTracing.Padding = new Padding(4);
+
+            // 
+            // filterControl
+            // 
+            filterControl.Dock = DockStyle.Fill;
 
             // 
             // gridMappings
@@ -277,39 +340,37 @@ namespace CascadeFields.Configurator.Controls
             colDelete.FillWeight = 8F;
 
             // 
-            // tabJson
-            // 
-            tabJson.Text = "JSON Preview";
-            tabJson.Padding = new Padding(4);
-            tabJson.Controls.Add(txtJsonPreview);
-
-            txtJsonPreview.Dock = DockStyle.Fill;
-            txtJsonPreview.Multiline = true;
-            txtJsonPreview.ScrollBars = ScrollBars.Both;
-            txtJsonPreview.ReadOnly = true;
-            txtJsonPreview.Font = new System.Drawing.Font("Consolas", 9F);
-
-            // 
             // CascadeFieldsConfiguratorControl
             // 
             AutoScaleMode = AutoScaleMode.Font;
-            Controls.Add(splitContainer);
+            Controls.Add(splitContainerMain);
             Controls.Add(ribbonPanel);
             Name = nameof(CascadeFieldsConfiguratorControl);
             Dock = DockStyle.Fill;
             ribbonPanel.ResumeLayout(false);
             ribbonPanel.PerformLayout();
-            splitContainer.Panel1.ResumeLayout(false);
-            splitContainer.Panel2.ResumeLayout(false);
-            ((ISupportInitialize)splitContainer).EndInit();
-            splitContainer.ResumeLayout(false);
-            leftLayout.ResumeLayout(false);
-            leftLayout.PerformLayout();
-            tabControl.ResumeLayout(false);
-            tabMappings.ResumeLayout(false);
-            ((ISupportInitialize)gridMappings).EndInit();
+            splitContainerMain.Panel1.ResumeLayout(false);
+            splitContainerMain.Panel2.ResumeLayout(false);
+            ((ISupportInitialize)splitContainerMain).EndInit();
+            splitContainerMain.ResumeLayout(false);
+            splitContainerLeft.Panel1.ResumeLayout(false);
+            splitContainerLeft.Panel2.ResumeLayout(false);
+            ((ISupportInitialize)splitContainerLeft).EndInit();
+            splitContainerLeft.ResumeLayout(false);
+            leftUpperLayout.ResumeLayout(false);
+            leftUpperLayout.PerformLayout();
+            tabControlLeftLower.ResumeLayout(false);
+            tabLog.ResumeLayout(false);
+            tabLog.PerformLayout();
             tabJson.ResumeLayout(false);
             tabJson.PerformLayout();
+            splitContainerRight.Panel1.ResumeLayout(false);
+            splitContainerRight.Panel2.ResumeLayout(false);
+            ((ISupportInitialize)splitContainerRight).EndInit();
+            splitContainerRight.ResumeLayout(false);
+            tabControlRightUpper.ResumeLayout(false);
+            panelRightLower.ResumeLayout(false);
+            ((ISupportInitialize)gridMappings).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }

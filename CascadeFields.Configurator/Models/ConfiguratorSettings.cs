@@ -30,8 +30,9 @@ namespace CascadeFields.Configurator.Models
         public string? ParentEntity { get; set; }
         public Guid? ParentFormId { get; set; }
         public string? ChildEntity { get; set; }
-        public Guid? ChildFormId { get; set; }
         public List<SavedFieldMapping>? FieldMappings { get; set; }
+        public List<SavedFilterCriteria>? FilterCriteria { get; set; }
+        public bool EnableTracing { get; set; } = true;
     }
 
     public class SavedFieldMapping
@@ -39,5 +40,12 @@ namespace CascadeFields.Configurator.Models
         public string? SourceField { get; set; }
         public string? TargetField { get; set; }
         public bool IsTriggerField { get; set; }
+    }
+
+    public class SavedFilterCriteria
+    {
+        public string? Field { get; set; }
+        public string? Operator { get; set; }
+        public string? Value { get; set; }
     }
 }

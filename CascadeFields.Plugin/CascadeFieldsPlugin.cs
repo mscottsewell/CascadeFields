@@ -13,7 +13,6 @@ namespace CascadeFields.Plugin
     public class CascadeFieldsPlugin : IPlugin
     {
         private readonly string _unsecureConfiguration;
-        private readonly string _secureConfiguration;
 
         /// <summary>
         /// Constructor for plugin registration
@@ -23,7 +22,6 @@ namespace CascadeFields.Plugin
         public CascadeFieldsPlugin(string unsecureConfiguration, string secureConfiguration)
         {
             _unsecureConfiguration = unsecureConfiguration;
-            _secureConfiguration = secureConfiguration;
         }
 
         /// <summary>

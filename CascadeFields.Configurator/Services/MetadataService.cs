@@ -200,7 +200,30 @@ namespace CascadeFields.Configurator.Services
 
             var attributes = entity.Attributes
                 .Where(a => a.IsValidForUpdate == true && !a.IsLogical.GetValueOrDefault())
-                .Where(a => formFields == null || formFields.Contains(a.LogicalName))
+                .Where(a => formFields == null || formFields.Count == 0 || formFields.Contains(a.LogicalName))
+                .Select(a => new AttributeItem
+                {
+                    LogicalName = a.LogicalName,
+                    DisplayName = a.DisplayName?.UserLocalizedLabel?.Label ?? a.LogicalName,
+                    Metadata = a
+                })
+                .OrderBy(a => a.DisplayName)
+                .ToList();
+
+            return attributes;
+        }
+
+        public IEnumerable<AttributeItem> GetFilterAttributeItems(EntityMetadata entity, HashSet<string>? formFields = null)
+        {
+            if (entity?.Attributes == null)
+            {
+                return Enumerable.Empty<AttributeItem>();
+            }
+
+            var attributes = entity.Attributes
+                .Where(a => a.IsValidForUpdate == true && !a.IsLogical.GetValueOrDefault())
+                .Where(a => formFields == null || formFields.Count == 0 || formFields.Contains(a.LogicalName) || 
+                           a.LogicalName == "statecode" || a.LogicalName == "statuscode")
                 .Select(a => new AttributeItem
                 {
                     LogicalName = a.LogicalName,

@@ -68,14 +68,14 @@ namespace CascadeFields.Configurator.Services
                             });
                         }
                     }
-                    catch
+                    catch (JsonException ex)
                     {
-                        // Ignore invalid configurations but keep raw for troubleshooting
+                        // Add invalid configuration with error details for troubleshooting
                         configured.Add(new ConfiguredRelationship
                         {
                             ParentEntity = "Unknown",
                             ChildEntity = "Unknown",
-                            RelationshipName = "Invalid configuration",
+                            RelationshipName = $"Invalid configuration: {ex.Message}",
                             RawJson = rawConfig
                         });
                     }

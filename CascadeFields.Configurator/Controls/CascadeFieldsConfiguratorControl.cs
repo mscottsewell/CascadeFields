@@ -27,15 +27,13 @@ namespace CascadeFields.Configurator.Controls
         private readonly BindingList<MappingRow> _mappingRows = new();
         private readonly Dictionary<string, List<EntityMetadata>> _solutionEntityCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _parentFormFields = new(StringComparer.OrdinalIgnoreCase);
-        private readonly HashSet<string> _childFormFields = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, TabPage> _childEntityTabs = new(StringComparer.OrdinalIgnoreCase);
 
         private ConfiguratorSettings _settings = new();
         private SessionSettings? _session;
         private bool _isRestoringSession; // legacy flag, used for guarded save/restore
         private bool _isApplyingSession;  // prevents duplicate restore/logging across event cascades
         private bool _restoredChildRelationship;
-        private bool _waitingForParentFormLoad;  // track parent form load during restore
-        private bool _waitingForChildFormLoad;   // track child form load during restore
         private List<SolutionItem> _solutions = new();
         private List<EntityMetadata> _currentEntities = new();
         private List<AttributeItem> _parentAttributes = new();
@@ -50,7 +48,6 @@ namespace CascadeFields.Configurator.Controls
         private EventHandler? _parentEntityChangedHandler;
         private EventHandler? _parentFormChangedHandler;
         private EventHandler? _childEntityChangedHandler;
-        private EventHandler? _childFormChangedHandler;
 
         // Optional: link to repository, can be surfaced via About dialog
         private string RepositoryName => "mscottsewell/CascadeFields";
@@ -83,6 +80,10 @@ namespace CascadeFields.Configurator.Controls
                 _mappingRows.Add(new MappingRow());
             }
 
+            // Wire up filter control events
+            filterControl.FilterChanged += (s, e) => UpdateJsonPreview();
+            chkEnableTracing.CheckedChanged += (s, e) => UpdateJsonPreview();
+
             btnLoadMetadata.Click += async (s, e) => await LoadSolutionsAsync();
             btnRetrieveConfigured.Click += async (s, e) => await RetrieveConfiguredAsync();
             btnUpdatePlugin.Click += async (s, e) => await UpdatePluginAssemblyAsync();
@@ -94,13 +95,11 @@ namespace CascadeFields.Configurator.Controls
             _parentEntityChangedHandler = async (s, e) => await OnParentEntityChangedAsync();
             _parentFormChangedHandler = (s, e) => OnParentFormChanged();
             _childEntityChangedHandler = async (s, e) => await OnChildEntityChangedAsync();
-            _childFormChangedHandler = (s, e) => OnChildFormChanged();
 
             cmbSolution.SelectedIndexChanged += _solutionChangedHandler;
             cmbParentEntity.SelectedIndexChanged += _parentEntityChangedHandler;
             cmbParentForm.SelectedIndexChanged += _parentFormChangedHandler;
             cmbChildEntity.SelectedIndexChanged += _childEntityChangedHandler;
-            cmbChildForm.SelectedIndexChanged += _childFormChangedHandler;
         }
 
         private void EnsureServices()
@@ -115,10 +114,21 @@ namespace CascadeFields.Configurator.Controls
         protected override void OnLoad(EventArgs e)
         {
             base.OnLoad(e);
-            if (splitContainer.Width > 0)
+            
+            // Set initial split proportions
+            if (splitContainerMain.Width > 0)
             {
-                splitContainer.SplitterDistance = splitContainer.Width / 2;
+                splitContainerMain.SplitterDistance = splitContainerMain.Width / 2;
             }
+            if (splitContainerLeft.Height > 0)
+            {
+                splitContainerLeft.SplitterDistance = (int)(splitContainerLeft.Height * 0.3);
+            }
+            if (splitContainerRight.Height > 0)
+            {
+                splitContainerRight.SplitterDistance = (int)(splitContainerRight.Height * 0.7);
+            }
+            
             LoadSettings();
 
             // If already connected on load, pre-load solutions; otherwise wait for user.
@@ -137,8 +147,6 @@ namespace CascadeFields.Configurator.Controls
                 cmbParentForm.Enabled = false;
                 cmbChildEntity.DataSource = null;
                 cmbChildEntity.Enabled = false;
-                cmbChildForm.DataSource = null;
-                cmbChildForm.Enabled = false;
             }
 
             AppendLog("Ready. Connect to Dataverse and click 'Load Metadata'.");
@@ -179,16 +187,15 @@ namespace CascadeFields.Configurator.Controls
             cmbSolution.DataSource = null;
             cmbSolution.Enabled = false;
 
-            // Clear entities
+            // Clear entities and cached solution entity data
             _currentEntities.Clear();
+            _solutionEntityCache.Clear();
             cmbParentEntity.DataSource = null;
             cmbParentEntity.Enabled = false;
 
             // Clear forms
             cmbParentForm.DataSource = null;
             cmbParentForm.Enabled = false;
-            cmbChildForm.DataSource = null;
-            cmbChildForm.Enabled = false;
 
             // Clear relationships
             cmbChildEntity.DataSource = null;
@@ -199,7 +206,6 @@ namespace CascadeFields.Configurator.Controls
             _parentAttributes.Clear();
             _childAttributes.Clear();
             _parentFormFields.Clear();
-            _childFormFields.Clear();
 
             // Clear mappings
             _mappingRows.Clear();
@@ -207,6 +213,10 @@ namespace CascadeFields.Configurator.Controls
 
             // Clear JSON preview
             txtJsonPreview.Text = string.Empty;
+            
+            // Clear filters
+            filterControl.ClearFilters();
+            chkEnableTracing.Checked = true;
         }
 
 
@@ -258,6 +268,17 @@ namespace CascadeFields.Configurator.Controls
         {
             if (!EnsureConnected()) return;
             EnsureServices();
+            
+            if (_metadataService == null)
+            {
+                AppendLog("Error: Metadata service is not available. Please reconnect to Dataverse.");
+                MessageBox.Show("Metadata service is not available. Please reconnect to Dataverse.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            // Clear cached entity data to force fresh load
+            _solutionEntityCache.Clear();
+            AppendLog("Cleared cached solution entity metadata.");
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -271,30 +292,7 @@ namespace CascadeFields.Configurator.Controls
                 {
                     if (args.Error != null)
                     {
-                _currentEntities = (args.Result as List<EntityMetadata>) ?? new List<EntityMetadata>();
-
-                // Ensure saved parent/child entities are available even if not explicitly in the solution components
-                if (_isApplyingSession && _session != null)
-                {
-                    var needed = new[] { _session.ParentEntity, _session.ChildEntity }
-                        .Where(n => !string.IsNullOrWhiteSpace(n))
-                        .Select(n => n!)
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .ToList();
-
-                    foreach (var logicalName in needed)
-                    {
-                        var exists = _currentEntities.Any(e => e.LogicalName.Equals(logicalName, StringComparison.OrdinalIgnoreCase));
-                        if (!exists)
-                        {
-                            var metadata = _metadataService!.GetEntityMetadataAsync(logicalName).GetAwaiter().GetResult();
-                            if (metadata != null)
-                            {
-                                _currentEntities.Add(metadata);
-                            }
-                        }
-                    }
-                }
+                        AppendLog($"Failed to load solutions: {args.Error.Message}");
                         return;
                     }
 
@@ -358,8 +356,6 @@ namespace CascadeFields.Configurator.Controls
             cmbParentForm.Enabled = false;
             cmbChildEntity.DataSource = null;
             cmbChildEntity.Enabled = false;
-            cmbChildForm.DataSource = null;
-            cmbChildForm.Enabled = false;
         }
 
         private async System.Threading.Tasks.Task OnSolutionChangedAsync()
@@ -395,9 +391,6 @@ namespace CascadeFields.Configurator.Controls
                 cmbChildEntity.SelectedIndex = -1;
                 cmbChildEntity.DataSource = null;
                 cmbChildEntity.Enabled = false;
-                cmbChildForm.SelectedIndex = -1;
-                cmbChildForm.DataSource = null;
-                cmbChildForm.Enabled = false;
                 UpdateEnableStates();
                 return;
             }
@@ -413,13 +406,11 @@ namespace CascadeFields.Configurator.Controls
                 _session.ParentEntity = null;
                 _session.ParentFormId = null;
                 _session.ChildEntity = null;
-                _session.ChildFormId = null;
                 
                 // Clear UI controls
                 cmbParentEntity.DataSource = null;
                 cmbParentForm.DataSource = null;
                 cmbChildEntity.DataSource = null;
-                cmbChildForm.DataSource = null;
                 _mappingRows.Clear();
                 
                 SaveSettings();
@@ -575,8 +566,6 @@ namespace CascadeFields.Configurator.Controls
                     
                     // Directly trigger cascade loads with the matched entity
                     AppendLog($"Triggering child relationships and form loads for parent: {match.LogicalName}");
-                    _waitingForParentFormLoad = true;
-                    _waitingForChildFormLoad = !string.IsNullOrWhiteSpace(_session?.ChildEntity);
                     _ = BindChildRelationships(match);
                     _ = LoadFormsAsync(match.LogicalName, isParent: true);
                     
@@ -598,8 +587,6 @@ namespace CascadeFields.Configurator.Controls
             cmbParentForm.Enabled = false;
             cmbChildEntity.DataSource = null;
             cmbChildEntity.Enabled = false;
-            cmbChildForm.DataSource = null;
-            cmbChildForm.Enabled = false;
 
             UpdateEnableStates();
         }
@@ -618,14 +605,12 @@ namespace CascadeFields.Configurator.Controls
             _selectedRelationship = null;
             cmbChildEntity.DataSource = null;
             cmbParentForm.DataSource = null;
-            cmbChildForm.DataSource = null;
             _mappingRows.Clear();
 
             if (cmbParentEntity.SelectedItem is not EntityItem parent)
             {
                 cmbParentForm.Enabled = false;
                 cmbChildEntity.Enabled = false;
-                cmbChildForm.Enabled = false;
                 return;
             }
 
@@ -634,7 +619,6 @@ namespace CascadeFields.Configurator.Controls
                 _session.ParentEntity = parent.LogicalName;
                 _session.ParentFormId = null;
                 _session.ChildEntity = null;
-                _session.ChildFormId = null;
                 SaveSettings();
             }
 
@@ -684,15 +668,20 @@ namespace CascadeFields.Configurator.Controls
                     
                     // CRITICAL: Set _selectedRelationship since the handler was detached when SelectedValue was set
                     _selectedRelationship = match;
-                    AppendLog($"[BindChild] Manually set _selectedRelationship to {match.ReferencingEntity}");
+                    AppendLog($"Set selected relationship to {match.ReferencingEntity}");
                     
                     // Re-attach handler
                     if (_childEntityChangedHandler != null)
                     {
                         cmbChildEntity.SelectedIndexChanged += _childEntityChangedHandler;
                     }
-                    // Manually trigger to load child forms (flags will be cleared when child form load completes)
+                    
+                    // Manually trigger child entity processing since handler was detached during restore
+                    RefreshAttributeLists();
+                    EnsureChildEntityTab(match);
+                    RefreshDestinationFieldDropdownsForAllTabs();
                     _ = LoadFormsAsync(match.ReferencingEntity, isParent: false);
+                    _ = LoadExistingMappingForSelectionAsync();
                     UpdateEnableStates();
                     return;
                 }
@@ -713,8 +702,6 @@ namespace CascadeFields.Configurator.Controls
             }
 
             cmbChildEntity.SelectedIndex = -1;
-            cmbChildForm.DataSource = null;
-            cmbChildForm.Enabled = false;
         }
 
         private async System.Threading.Tasks.Task OnChildEntityChangedAsync()
@@ -728,15 +715,12 @@ namespace CascadeFields.Configurator.Controls
             }
 
             _childAttributes.Clear();
-            _childFormFields.Clear();
-            cmbChildForm.DataSource = null;
             _selectedRelationship = cmbChildEntity.SelectedItem as RelationshipItem;
             _mappingRows.Clear();
 
             if (_session != null && !_isApplyingSession && !_isRestoringSession)
             {
                 _session.ChildEntity = _selectedRelationship?.ReferencingEntity;
-                _session.ChildFormId = null;
                 SaveSettings();
             }
 
@@ -757,7 +741,87 @@ namespace CascadeFields.Configurator.Controls
                 _isRestoringSession = false;
                 AppendLog($"Flags cleared. Ready for user interaction.");
             }
+            
+            // Create or switch to tab for this child entity
+            EnsureChildEntityTab(_selectedRelationship);
+            RefreshDestinationFieldDropdownsForAllTabs();
+            
             await Task.CompletedTask;
+        }
+
+        private void EnsureChildEntityTab(RelationshipItem? relationship)
+        {
+            if (relationship == null) return;
+
+            var tabKey = relationship.ReferencingEntity;
+            var tabName = relationship.DisplayName;
+
+            // Check if tab already exists
+            if (_childEntityTabs.TryGetValue(tabKey, out var existingTab))
+            {
+                tabControlRightUpper.SelectedTab = existingTab;
+                return;
+            }
+
+            // Create new tab for this child entity
+            var newTab = new TabPage(tabName)
+            {
+                Padding = new Padding(4)
+            };
+
+            // Create a new DataGridView for this tab
+            var newGrid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AllowUserToAddRows = false,
+                AutoGenerateColumns = false,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                RowHeadersVisible = false,
+                DataSource = _mappingRows
+            };
+
+            // Clone the column definitions from the main grid
+            var clonedSourceCol = (DataGridViewComboBoxColumn)colSourceField.Clone();
+            var clonedTargetCol = (DataGridViewComboBoxColumn)colTargetField.Clone();
+            var clonedTriggerCol = (DataGridViewCheckBoxColumn)colTrigger.Clone();
+            var clonedDeleteCol = (DataGridViewButtonColumn)colDelete.Clone();
+            
+            newGrid.Columns.AddRange(new DataGridViewColumn[]
+            {
+                clonedSourceCol,
+                clonedTargetCol,
+                clonedTriggerCol,
+                clonedDeleteCol
+            });
+
+            // Set up the source field dropdown with parent attributes
+            clonedSourceCol.DataSource = _parentAttributes;
+            clonedSourceCol.DisplayMember = nameof(AttributeItem.DisplayName);
+            clonedSourceCol.ValueMember = nameof(AttributeItem.LogicalName);
+
+            newTab.Controls.Add(newGrid);
+            
+            // Wire up the same event handlers
+            newGrid.CellValueChanged += (s, e) => Grid_CellValueChanged(newGrid, e);
+            newGrid.EditingControlShowing += GridMappings_EditingControlShowing;
+            newGrid.CellClick += GridMappings_CellClick;
+            newGrid.CellContentClick += GridMappings_CellContentClick;
+            newGrid.CurrentCellDirtyStateChanged += (s, e) =>
+            {
+                if (newGrid.IsCurrentCellDirty && newGrid.CurrentCell is DataGridViewComboBoxCell)
+                {
+                    newGrid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+                }
+            };
+            newGrid.DataError += (s, e) => { e.ThrowException = false; };
+            newGrid.UserDeletedRow += (s, e) => UpdateJsonPreview();
+            newGrid.RowsAdded += (s, e) => GridMappings_RowsAdded_ForGrid(newGrid, e);
+
+            _childEntityTabs[tabKey] = newTab;
+            tabControlRightUpper.TabPages.Add(newTab);
+            tabControlRightUpper.SelectedTab = newTab;
+
+            AppendLog($"Created tab for child entity: {tabName}");
         }
 
         private void OnParentFormChanged()
@@ -776,32 +840,24 @@ namespace CascadeFields.Configurator.Controls
             UpdateEnableStates();
         }
 
-        private void OnChildFormChanged()
+        private void RefreshFilterFieldDropdowns()
         {
-            _childFormFields.Clear();
-            if (cmbChildForm.SelectedItem is FormItem form)
+            // Get filter attributes - always includes statecode/statuscode
+            if (_metadataService == null || _selectedRelationship == null)
             {
-                _childFormFields.UnionWith(_metadataService?.GetFieldsFromFormXml(form.FormXml) ?? Enumerable.Empty<string>());
-                AppendLog($"[OnChildForm] Form '{form.Name}' selected, extracted {_childFormFields.Count} fields");
-                if (_session != null && !_isApplyingSession && !_isRestoringSession)
-                {
-                    _session.ChildFormId = form.Id;
-                    SaveSettings();
-                }
+                return;
             }
-            else
+
+            var childMeta = _currentEntities.FirstOrDefault(e => e.LogicalName.Equals(_selectedRelationship.ReferencingEntity, StringComparison.OrdinalIgnoreCase));
+            if (childMeta != null)
             {
-                AppendLog($"[OnChildForm] No form selected");
+                var filterAttributes = _metadataService.GetFilterAttributeItems(childMeta, null).ToList();
+                filterControl.SetAvailableFields(filterAttributes);
             }
-            RefreshAttributeLists();
-            RefreshDestinationFieldDropdowns();
-            UpdateEnableStates();
         }
 
         private void RefreshDestinationFieldDropdowns()
         {
-            AppendLog($"[RefreshDestFields] Refreshing destination field dropdowns for {gridMappings.Rows.Count} rows");
-            
             // Iterate through all rows and refresh their target field dropdowns
             for (int i = 0; i < gridMappings.Rows.Count; i++)
             {
@@ -818,7 +874,6 @@ namespace CascadeFields.Configurator.Controls
                 
                 // Get compatible attributes for this source field
                 var compatibleAttributes = GetCompatibleChildAttributes(sourceLogical).ToList();
-                AppendLog($"[RefreshDestFields] Row {i}: Source='{sourceLogical}', Found {compatibleAttributes.Count} compatible attributes");
                 
                 // Update the target cell's Items collection
                 if (targetCell != null)
@@ -838,16 +893,10 @@ namespace CascadeFields.Configurator.Controls
                     {
                         var stillValid = compatibleAttributes.Any(a => a.LogicalName.Equals(currentTargetValue, StringComparison.OrdinalIgnoreCase));
                         
-                        if (stillValid)
-                        {
-                            // Keep the current selection
-                            AppendLog($"[RefreshDestFields] Row {i}: Keeping current target '{currentTargetValue}' (still valid)");
-                        }
-                        else
+                        if (!stillValid)
                         {
                             // Clear the selection as it's no longer valid
                             targetCell.Value = null;
-                            AppendLog($"[RefreshDestFields] Row {i}: Cleared target '{currentTargetValue}' (no longer valid)");
                         }
                     }
                     
@@ -856,6 +905,74 @@ namespace CascadeFields.Configurator.Controls
             }
             
             UpdateJsonPreview();
+        }
+
+        private void RefreshDestinationFieldDropdownsForAllTabs()
+        {
+            // Refresh dropdowns for all dynamically created tab grids
+            foreach (var kvp in _childEntityTabs)
+            {
+                var tab = kvp.Value;
+                var grid = tab.Controls.OfType<DataGridView>().FirstOrDefault();
+                if (grid != null)
+                {
+                    RefreshDestinationFieldDropdownsForGrid(grid);
+                }
+            }
+        }
+
+        private void RefreshDestinationFieldDropdownsForGrid(DataGridView grid)
+        {
+            if (grid.Columns.Count < 2) return;
+
+            var sourceColIndex = 0; // Source field column
+            var targetColIndex = 1; // Target field column
+
+            // Iterate through all rows and refresh their target field dropdowns
+            for (int i = 0; i < grid.Rows.Count; i++)
+            {
+                var row = grid.Rows[i];
+                var sourceLogical = row.Cells[sourceColIndex].Value as string;
+                var targetCell = row.Cells[targetColIndex] as DataGridViewComboBoxCell;
+                var currentTargetValue = targetCell?.Value as string;
+                
+                if (string.IsNullOrWhiteSpace(sourceLogical))
+                {
+                    // No source field selected, skip this row
+                    continue;
+                }
+                
+                // Get compatible attributes for this source field
+                var compatibleAttributes = GetCompatibleChildAttributes(sourceLogical).ToList();
+                
+                // Update the target cell's Items collection
+                if (targetCell != null)
+                {
+                    targetCell.DataSource = null;
+                    targetCell.DisplayMember = nameof(AttributeItem.DisplayName);
+                    targetCell.ValueMember = nameof(AttributeItem.LogicalName);
+                    targetCell.Items.Clear();
+                    
+                    foreach (var attr in compatibleAttributes)
+                    {
+                        targetCell.Items.Add(attr);
+                    }
+                    
+                    // Check if the currently selected field is still valid
+                    if (!string.IsNullOrWhiteSpace(currentTargetValue))
+                    {
+                        var stillValid = compatibleAttributes.Any(a => a.LogicalName.Equals(currentTargetValue, StringComparison.OrdinalIgnoreCase));
+                        
+                        if (!stillValid)
+                        {
+                            // Clear the selection as it's no longer valid
+                            targetCell.Value = null;
+                        }
+                    }
+                    
+                    grid.InvalidateCell(targetCell);
+                }
+            }
         }
 
         private async System.Threading.Tasks.Task LoadFormsAsync(string logicalName, bool isParent)
@@ -881,19 +998,21 @@ namespace CascadeFields.Configurator.Controls
                     var forms = args.Result as List<FormItem> ?? new List<FormItem>();
                     AppendLog($"Loaded {forms.Count} forms for {logicalName}");
                         
-                        var combo = isParent ? cmbParentForm : cmbChildForm;
+                    if (isParent)
+                    {
+                        var combo = cmbParentForm;
                         combo.DataSource = forms;
                         combo.DisplayMember = nameof(FormItem.Name);
                         combo.ValueMember = nameof(FormItem.Id);
                         combo.Enabled = forms.Count > 0;
 
-                        var targetId = _session != null ? (isParent ? _session.ParentFormId : _session.ChildFormId) : null;
+                        var targetId = _session?.ParentFormId;
                         if ((_isApplyingSession || _isRestoringSession) && targetId.HasValue)
                         {
                             var match = forms.FirstOrDefault(f => f.Id == targetId.Value);
                             if (match != null)
                             {
-                                AppendLog($"Restoring saved {(isParent ? "parent" : "child")} form: {match.Name}");
+                                AppendLog($"Restoring saved parent form: {match.Name}");
                                 combo.SelectedItem = match;
                             }
                             else
@@ -907,53 +1026,55 @@ namespace CascadeFields.Configurator.Controls
                             combo.SelectedIndex = -1;
                         }
 
-                    UpdateEnableStates();
-                    
-                    // Mark this form load as complete
-                    if (isParent)
-                    {
-                        _waitingForParentFormLoad = false;
-                        AppendLog($"Parent form load complete. Waiting for child: {_waitingForChildFormLoad}");
-                    }
-                    else
-                    {
-                        _waitingForChildFormLoad = false;
-                        AppendLog($"Child form load complete. Waiting for parent: {_waitingForParentFormLoad}");
-                    }
-                    
-                    // Clear restore flags only after BOTH parent and child forms are loaded
-                    if ((_isApplyingSession || _isRestoringSession) && !_waitingForParentFormLoad && !_waitingForChildFormLoad)
-                    {
-                        AppendLog($"All forms loaded during restore. Clearing flags: _isApplyingSession={_isApplyingSession}, _isRestoringSession={_isRestoringSession}");
+                        UpdateEnableStates();
                         
-                        // Restore field mappings from session
-                        if (_session?.FieldMappings != null && _session.FieldMappings.Any())
+                        // Mark form load as complete
+                        AppendLog($"Parent form load complete.");
+                        
+                        // Clear restore flags after parent form is loaded
+                        if (_isApplyingSession || _isRestoringSession)
                         {
-                            AppendLog($"Restoring {_session.FieldMappings.Count} field mapping(s) from session");
-                            _mappingRows.Clear();
+                            AppendLog($"Form loaded during restore. Clearing flags: _isApplyingSession={_isApplyingSession}, _isRestoringSession={_isRestoringSession}");
                             
-                            foreach (var mapping in _session.FieldMappings)
+                            // Restore field mappings from session
+                            if (_session?.FieldMappings != null && _session.FieldMappings.Any())
                             {
-                                _mappingRows.Add(new MappingRow
+                                AppendLog($"Restoring {_session.FieldMappings.Count} field mapping(s) from session");
+                                _mappingRows.Clear();
+                                
+                                foreach (var mapping in _session.FieldMappings)
                                 {
-                                    SourceField = mapping.SourceField,
-                                    TargetField = mapping.TargetField,
-                                    IsTriggerField = mapping.IsTriggerField
-                                });
+                                    _mappingRows.Add(new MappingRow
+                                    {
+                                        SourceField = mapping.SourceField,
+                                        TargetField = mapping.TargetField,
+                                        IsTriggerField = mapping.IsTriggerField
+                                    });
+                                }
+                                
+                                // Add blank row if needed
+                                if (_mappingRows.Count == 0 || 
+                                    (!string.IsNullOrWhiteSpace(_mappingRows[_mappingRows.Count - 1].SourceField) && 
+                                     !string.IsNullOrWhiteSpace(_mappingRows[_mappingRows.Count - 1].TargetField)))
+                                {
+                                    _mappingRows.Add(new MappingRow());
+                                }
                             }
                             
-                            // Add blank row if needed
-                            if (_mappingRows.Count == 0 || 
-                                (!string.IsNullOrWhiteSpace(_mappingRows[_mappingRows.Count - 1].SourceField) && 
-                                 !string.IsNullOrWhiteSpace(_mappingRows[_mappingRows.Count - 1].TargetField)))
+                            // Restore filter criteria from session
+                            if (_session?.FilterCriteria != null)
                             {
-                                _mappingRows.Add(new MappingRow());
+                                AppendLog($"Restoring {_session.FilterCriteria.Count} filter(s) from session");
+                                filterControl.LoadFilters(_session.FilterCriteria);
                             }
+                            
+                            // Restore tracing setting from session
+                            chkEnableTracing.Checked = _session?.EnableTracing ?? true;
+                            
+                            _isApplyingSession = false;
+                            _isRestoringSession = false;
+                            AppendLog($"Flags cleared. Ready for user interaction.");
                         }
-                        
-                        _isApplyingSession = false;
-                        _isRestoringSession = false;
-                        AppendLog($"Flags cleared. Ready for user interaction.");
                     }
                 }
             });
@@ -965,7 +1086,6 @@ namespace CascadeFields.Configurator.Controls
         {
             if (_metadataService == null)
             {
-                AppendLog("[RefreshAttr] MetadataService is null");
                 return;
             }
 
@@ -974,17 +1094,18 @@ namespace CascadeFields.Configurator.Controls
                 ? _currentEntities.FirstOrDefault(e => e.LogicalName.Equals(_selectedRelationship.ReferencingEntity, StringComparison.OrdinalIgnoreCase))
                 : null;
 
-            AppendLog($"[RefreshAttr] Parent={parentMeta?.LogicalName ?? "(null)"}, ParentFormFields={_parentFormFields.Count}, Child={childMeta?.LogicalName ?? "(null)"}, ChildFormFields={_childFormFields.Count}, SelectedRel={_selectedRelationship?.ReferencingEntity ?? "(null)"}");
-
             _parentAttributes = parentMeta != null
                 ? _metadataService.GetAttributeItems(parentMeta, _parentFormFields).ToList()
                 : new List<AttributeItem>();
 
             _childAttributes = childMeta != null
-                ? _metadataService.GetAttributeItems(childMeta, _childFormFields).ToList()
+                ? _metadataService.GetAttributeItems(childMeta, null).ToList()
                 : new List<AttributeItem>();
 
-            AppendLog($"[RefreshAttr] Loaded {_parentAttributes.Count} parent attributes, {_childAttributes.Count} child attributes");
+            if (_parentAttributes.Any() || _childAttributes.Any())
+            {
+                AppendLog($"Loaded {_parentAttributes.Count} parent and {_childAttributes.Count} child attributes");
+            }
 
             BindAttributeColumns();
             UpdateJsonPreview();
@@ -1003,56 +1124,57 @@ namespace CascadeFields.Configurator.Controls
             colTargetField.ValueMember = nameof(AttributeItem.LogicalName);
         }
 
-        private void GridMappings_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
+        private void Grid_CellValueChanged(DataGridView grid, DataGridViewCellEventArgs e)
         {
-            if (e.RowIndex < 0) return;
+            if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
 
-            if (e.ColumnIndex == colSourceField.Index)
+            var sourceColIndex = 0; // Source field column
+            var targetColIndex = 1; // Target field column
+
+            // When source field changes, populate compatible target fields
+            if (e.ColumnIndex == sourceColIndex)
             {
-                var sourceLogical = gridMappings.Rows[e.RowIndex].Cells[colSourceField.Index].Value as string;
-                var targetCell = gridMappings.Rows[e.RowIndex].Cells[colTargetField.Index] as DataGridViewComboBoxCell;
-                
-                AppendLog($"[Grid] CellValueChanged: Row={e.RowIndex}, Source={sourceLogical ?? "(null)"}");
-                
-                // Clear and disable target field if no source selected
-                if (string.IsNullOrWhiteSpace(sourceLogical))
+                var sourceLogical = grid.Rows[e.RowIndex].Cells[sourceColIndex].Value as string;
+                var targetCell = grid.Rows[e.RowIndex].Cells[targetColIndex] as DataGridViewComboBoxCell;
+
+                if (targetCell != null)
                 {
-                    targetCell!.Value = null;
-                    targetCell.ReadOnly = true;
-                    targetCell.DataSource = null;
-                    AppendLog($"[Grid] Source empty - cleared target cell");
-                }
-                else
-                {
-                    targetCell!.ReadOnly = false;
-                    
-                    // Get compatible attributes and populate the cell
-                    var compatibleAttributes = GetCompatibleChildAttributes(sourceLogical).ToList();
-                    AppendLog($"[Grid] Found {compatibleAttributes.Count} compatible attributes for source '{sourceLogical}'");
-                    
-                    // Use Items collection - set DisplayMember/ValueMember FIRST, then populate
-                    targetCell.DataSource = null;
-                    targetCell.DisplayMember = nameof(AttributeItem.DisplayName);
-                    targetCell.ValueMember = nameof(AttributeItem.LogicalName);
-                    targetCell.Items.Clear();
-                    
-                    foreach (var attr in compatibleAttributes)
+                    if (string.IsNullOrWhiteSpace(sourceLogical))
                     {
-                        targetCell.Items.Add(attr);
+                        targetCell.Value = null;
+                        targetCell.ReadOnly = true;
+                        targetCell.Items.Clear();
                     }
-                    
-                    AppendLog($"[Grid] Populated target cell with {targetCell.Items.Count} items");
+                    else
+                    {
+                        targetCell.ReadOnly = false;
+                        var compatibleAttributes = GetCompatibleChildAttributes(sourceLogical).ToList();
+                        targetCell.DataSource = null;
+                        targetCell.DisplayMember = nameof(AttributeItem.DisplayName);
+                        targetCell.ValueMember = nameof(AttributeItem.LogicalName);
+                        targetCell.Items.Clear();
+
+                        foreach (var attr in compatibleAttributes)
+                        {
+                            targetCell.Items.Add(attr);
+                        }
+                    }
+
+                    // Force the cell and row to refresh
+                    grid.InvalidateCell(targetCell);
+                    grid.InvalidateRow(e.RowIndex);
                 }
-                
-                // Force the cell and row to refresh
-                gridMappings.InvalidateCell(targetCell);
-                gridMappings.InvalidateRow(e.RowIndex);
             }
-            
+
             // Check if we should add a new row
             CheckAndAddNewRow(e.RowIndex);
 
             UpdateJsonPreview();
+        }
+
+        private void GridMappings_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
+        {
+            Grid_CellValueChanged(gridMappings, e);
         }
         
         private void GridMappings_CurrentCellDirtyStateChanged(object? sender, EventArgs e)
@@ -1066,8 +1188,8 @@ namespace CascadeFields.Configurator.Controls
         
         private void GridMappings_CellContentClick(object? sender, DataGridViewCellEventArgs e)
         {
-            // Handle delete button click
-            if (e.RowIndex >= 0 && e.ColumnIndex == colDelete.Index)
+            // Handle delete button click (column 3 is delete button)
+            if (e.RowIndex >= 0 && e.ColumnIndex == 3)
             {
                 _mappingRows.RemoveAt(e.RowIndex);
                 
@@ -1101,13 +1223,23 @@ namespace CascadeFields.Configurator.Controls
         
         private void GridMappings_RowsAdded(object? sender, DataGridViewRowsAddedEventArgs e)
         {
+            if (sender is DataGridView grid)
+            {
+                GridMappings_RowsAdded_ForGrid(grid, e);
+            }
+        }
+
+        private void GridMappings_RowsAdded_ForGrid(DataGridView grid, DataGridViewRowsAddedEventArgs e)
+        {
+            var targetColIndex = 1; // Target field column
+            
             // Initialize cells for newly added rows
             for (int i = e.RowIndex; i < e.RowIndex + e.RowCount; i++)
             {
-                if (i < gridMappings.Rows.Count && i < _mappingRows.Count)
+                if (i < grid.Rows.Count && i < _mappingRows.Count)
                 {
                     var row = _mappingRows[i];
-                    var targetCell = gridMappings.Rows[i].Cells[colTargetField.Index] as DataGridViewComboBoxCell;
+                    var targetCell = grid.Rows[i].Cells[targetColIndex] as DataGridViewComboBoxCell;
                     
                     if (targetCell != null)
                     {
@@ -1116,7 +1248,6 @@ namespace CascadeFields.Configurator.Controls
                         {
                             targetCell.ReadOnly = false;
                             var compatibleAttributes = GetCompatibleChildAttributes(row.SourceField).ToList();
-                            AppendLog($"[Grid] RowsAdded: Row={i}, Source={row.SourceField}, Found {compatibleAttributes.Count} compatible attributes");
                             
                             // Use Items collection - set DisplayMember/ValueMember FIRST, then populate
                             targetCell.DataSource = null;
@@ -1138,7 +1269,7 @@ namespace CascadeFields.Configurator.Controls
                             targetCell.Value = null;
                         }
                         
-                        gridMappings.InvalidateCell(targetCell);
+                        grid.InvalidateCell(targetCell);
                     }
                 }
             }
@@ -1146,10 +1277,12 @@ namespace CascadeFields.Configurator.Controls
 
         private void GridMappings_CellClick(object? sender, DataGridViewCellEventArgs e)
         {
+            if (sender is not DataGridView grid) return;
+            
             // Auto-open dropdown on first click for ComboBox cells
             if (e.RowIndex < 0 || e.ColumnIndex < 0) return;
 
-            var cell = gridMappings.Rows[e.RowIndex].Cells[e.ColumnIndex];
+            var cell = grid.Rows[e.RowIndex].Cells[e.ColumnIndex];
             
             // Don't allow clicking on disabled target field
             if (cell is DataGridViewComboBoxCell comboCell && comboCell.ReadOnly)
@@ -1160,13 +1293,13 @@ namespace CascadeFields.Configurator.Controls
             if (cell is DataGridViewComboBoxCell)
             {
                 // Begin edit mode if not already in it
-                if (!gridMappings.IsCurrentCellInEditMode)
+                if (!grid.IsCurrentCellInEditMode)
                 {
-                    gridMappings.BeginEdit(true);
+                    grid.BeginEdit(true);
                 }
 
                 // Show dropdown if we're editing a ComboBox
-                if (gridMappings.EditingControl is ComboBox combo)
+                if (grid.EditingControl is ComboBox combo)
                 {
                     combo.DroppedDown = true;
                 }
@@ -1175,19 +1308,22 @@ namespace CascadeFields.Configurator.Controls
 
         private void GridMappings_EditingControlShowing(object? sender, DataGridViewEditingControlShowingEventArgs e)
         {
-            if (gridMappings.CurrentCell == null) return;
-            if (gridMappings.CurrentCell.ColumnIndex == colSourceField.Index && e.Control is ComboBox sourceCombo)
+            if (sender is not DataGridView grid) return;
+            if (grid.CurrentCell == null) return;
+            
+            var sourceColIndex = 0;
+            var targetColIndex = 1;
+            
+            if (grid.CurrentCell.ColumnIndex == sourceColIndex && e.Control is ComboBox sourceCombo)
             {
                 sourceCombo.DataSource = _parentAttributes;
                 sourceCombo.DisplayMember = nameof(AttributeItem.DisplayName);
                 sourceCombo.ValueMember = nameof(AttributeItem.LogicalName);
             }
-            else if (gridMappings.CurrentCell.ColumnIndex == colTargetField.Index && e.Control is ComboBox targetCombo)
+            else if (grid.CurrentCell.ColumnIndex == targetColIndex && e.Control is ComboBox targetCombo)
             {
                 // Don't override with DataSource - the cell's Items collection is already populated
                 // in CellValueChanged or RowsAdded event handlers
-                var sourceLogical = gridMappings.CurrentRow?.Cells[colSourceField.Index].Value as string;
-                AppendLog($"[Grid] EditingControlShowing: Target column, Source={sourceLogical ?? "(null)"}");
             }
         }
 
@@ -1195,21 +1331,17 @@ namespace CascadeFields.Configurator.Controls
         {
             if (string.IsNullOrWhiteSpace(sourceLogical))
             {
-                AppendLog($"[GetCompatible] Source is null/empty");
                 return Enumerable.Empty<AttributeItem>();
             }
 
-            AppendLog($"[GetCompatible] Looking for source '{sourceLogical}' in {_parentAttributes.Count} parent attributes");
             var sourceAttr = _parentAttributes.FirstOrDefault(a => a.LogicalName.Equals(sourceLogical, StringComparison.OrdinalIgnoreCase))?.Metadata;
             if (sourceAttr == null)
             {
-                AppendLog($"[GetCompatible] Source attribute '{sourceLogical}' NOT FOUND in parent attributes!");
+                AppendLog($"Warning: Source attribute '{sourceLogical}' not found in parent attributes");
                 return Enumerable.Empty<AttributeItem>();
             }
 
-            AppendLog($"[GetCompatible] Source found: {sourceAttr.LogicalName} (Type: {sourceAttr.AttributeType}), checking against {_childAttributes.Count} child attributes");
             var compatible = _childAttributes.Where(child => IsCompatible(sourceAttr, child.Metadata)).ToList();
-            AppendLog($"[GetCompatible] Compatibility check complete: {compatible.Count} compatible child attributes found");
             return compatible;
         }
 
@@ -1273,7 +1405,7 @@ namespace CascadeFields.Configurator.Controls
                 })
                 .ToList();
 
-            // Save mappings to session
+            // Save mappings and filters to session
             if (_session != null && !_isApplyingSession && !_isRestoringSession)
             {
                 _session.FieldMappings = _mappingRows
@@ -1285,6 +1417,8 @@ namespace CascadeFields.Configurator.Controls
                         IsTriggerField = m.IsTriggerField
                     })
                     .ToList();
+                _session.FilterCriteria = filterControl.GetFilters();
+                _session.EnableTracing = chkEnableTracing.Checked;
                 SaveSettings();
             }
 
@@ -1293,6 +1427,8 @@ namespace CascadeFields.Configurator.Controls
                 txtJsonPreview.Text = "Add at least one field mapping to preview configuration.";
                 return;
             }
+
+            var filterString = filterControl.GetFilterString();
 
             var config = new CascadeConfigurationModel
             {
@@ -1307,10 +1443,11 @@ namespace CascadeFields.Configurator.Controls
                         RelationshipName = _selectedRelationship.SchemaName,
                         LookupFieldName = _selectedRelationship.ReferencingAttribute,
                         UseRelationship = true,
+                        FilterCriteria = string.IsNullOrWhiteSpace(filterString) ? null : filterString,
                         FieldMappings = mappings
                     }
                 },
-                EnableTracing = true,
+                EnableTracing = chkEnableTracing.Checked,
                 IsActive = true
             };
 
@@ -1321,6 +1458,13 @@ namespace CascadeFields.Configurator.Controls
         {
             if (!EnsureConnected()) return;
             EnsureServices();
+            
+            if (_configurationService == null)
+            {
+                AppendLog("Error: Configuration service is not available.");
+                MessageBox.Show("Configuration service is not available. Please reconnect to Dataverse.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
 
             WorkAsync(new WorkAsyncInfo
             {
@@ -1402,7 +1546,28 @@ namespace CascadeFields.Configurator.Controls
                 });
             }
 
+            // Refresh attribute lists and dropdowns to ensure fields are loaded
+            // even if no form is selected (configuration from JSON may not have form context)
+            RefreshAttributeLists();
+            RefreshDestinationFieldDropdowns();
+            RefreshFilterFieldDropdowns();
+
+            // Apply filter criteria
+            if (!string.IsNullOrWhiteSpace(related.FilterCriteria))
+            {
+                filterControl.LoadFromFilterString(related.FilterCriteria);
+                AppendLog($"Loaded filter: {related.FilterCriteria}");
+            }
+            else
+            {
+                filterControl.ClearFilters();
+            }
+
+            // Apply tracing setting
+            chkEnableTracing.Checked = configuration.EnableTracing;
+
             UpdateJsonPreview();
+            AppendLog($"Configuration applied: {_mappingRows.Count} field mapping(s) loaded");
         }
 
         private async System.Threading.Tasks.Task PublishConfigurationAsync()
@@ -1413,6 +1578,12 @@ namespace CascadeFields.Configurator.Controls
             if (_selectedRelationship == null || cmbParentEntity.SelectedItem is not EntityItem parent)
             {
                 MessageBox.Show("Select a parent and child entity before publishing.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            
+            if (_configurationService == null)
+            {
+                MessageBox.Show("Configuration service is not available. Please reconnect to Dataverse.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
 
@@ -1489,6 +1660,13 @@ namespace CascadeFields.Configurator.Controls
         {
             if (!EnsureConnected()) return;
             EnsureServices();
+            
+            if (_configurationService == null)
+            {
+                AppendLog("Error: Configuration service is not available.");
+                MessageBox.Show("Configuration service is not available. Please reconnect to Dataverse.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
 
             var pluginPath = ResolvePluginAssemblyPath();
             await Task.CompletedTask;
@@ -1562,8 +1740,6 @@ namespace CascadeFields.Configurator.Controls
             var assemblyLocation = Assembly.GetExecutingAssembly().Location;
             var baseDir = string.IsNullOrWhiteSpace(assemblyLocation) ? null : Path.GetDirectoryName(assemblyLocation);
             
-            AppendLog($"[ResolvePlugin] BaseDirectory: {baseDir ?? "(null)"}");
-            
             var candidates = new List<string>();
             
             if (!string.IsNullOrWhiteSpace(baseDir))
@@ -1590,19 +1766,16 @@ namespace CascadeFields.Configurator.Controls
                 candidates.Add(Path.GetFullPath(Path.Combine(baseDir, "..", "..", "CascadeFields.Plugin", "bin", "Release", "net462", "CascadeFields.Plugin.dll")));
             }
 
-            for (int i = 0; i < candidates.Count; i++)
+            foreach (var path in candidates)
             {
-                var path = candidates[i];
-                var exists = File.Exists(path);
-                AppendLog($"[ResolvePlugin] Candidate {i + 1}: {path} - Exists: {exists}");
-                if (exists)
+                if (File.Exists(path))
                 {
-                    AppendLog($"[ResolvePlugin] Found plugin at: {path}");
+                    AppendLog($"Found plugin assembly at: {path}");
                     return path;
                 }
             }
             
-            AppendLog($"[ResolvePlugin] Plugin not found. Checked {candidates.Count} locations.");
+            AppendLog($"Warning: Plugin assembly not found. Checked {candidates.Count} locations.");
             return null;
         }
 
@@ -1621,7 +1794,6 @@ namespace CascadeFields.Configurator.Controls
             _parentAttributes.Clear();
             _childAttributes.Clear();
             _parentFormFields.Clear();
-            _childFormFields.Clear();
             _selectedRelationship = null;
             _mappingRows.Clear();
 
@@ -1629,7 +1801,6 @@ namespace CascadeFields.Configurator.Controls
             cmbParentEntity.DataSource = null;
             cmbParentForm.DataSource = null;
             cmbChildEntity.DataSource = null;
-            cmbChildForm.DataSource = null;
 
             UpdateEnableStates();
             UpdateJsonPreview();
@@ -1643,8 +1814,6 @@ namespace CascadeFields.Configurator.Controls
             var hasParent = cmbParentEntity.SelectedItem != null;
             cmbParentForm.Enabled = hasParent && (cmbParentForm.DataSource as List<FormItem>)?.Any() == true;
             cmbChildEntity.Enabled = hasParent && (cmbChildEntity.DataSource as List<RelationshipItem>)?.Any() == true;
-            var hasChild = cmbChildEntity.SelectedItem != null;
-            cmbChildForm.Enabled = hasChild && (cmbChildForm.DataSource as List<FormItem>)?.Any() == true;
         }
 
         private async Task LoadExistingMappingForSelectionAsync()

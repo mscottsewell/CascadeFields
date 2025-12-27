@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Microsoft.Xrm.Sdk.Metadata;
 using CascadeConfigurationModel = CascadeFields.Plugin.Models.CascadeConfiguration;
 
@@ -48,13 +49,19 @@ namespace CascadeFields.Configurator.Models
         public override string ToString() => Name;
     }
 
-    internal class AttributeItem
+    public class AttributeItem
     {
         public string LogicalName { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
         public AttributeMetadata Metadata { get; set; } = default!;
 
         public override string ToString() => string.IsNullOrWhiteSpace(DisplayName)
+            ? LogicalName
+            : $"{DisplayName} ({LogicalName})";
+
+        // CRITICAL: This must be a property, NOT a method, for Windows Forms databinding
+        // Using a method here causes UI freezes when bound to ComboBox/DataGridView
+        public string FilterDisplayName => string.IsNullOrWhiteSpace(DisplayName)
             ? LogicalName
             : $"{DisplayName} ({LogicalName})";
     }
@@ -64,6 +71,34 @@ namespace CascadeFields.Configurator.Models
         public string? SourceField { get; set; }
         public string? TargetField { get; set; }
         public bool IsTriggerField { get; set; } = true;
+    }
+
+    internal class FilterRow
+    {
+        public string? Field { get; set; }
+        public string? Operator { get; set; }
+        public string? Value { get; set; }
+    }
+
+    internal class FilterOperator
+    {
+        public string Code { get; set; } = string.Empty;
+        public string Display { get; set; } = string.Empty;
+
+        public override string ToString() => Display;
+
+        public static List<FilterOperator> GetAll() => new()
+        {
+            new() { Code = "eq", Display = "Equal (=)" },
+            new() { Code = "ne", Display = "Not Equal (!=)" },
+            new() { Code = "gt", Display = "Greater Than (>)" },
+            new() { Code = "lt", Display = "Less Than (<)" },
+            new() { Code = "in", Display = "In (value list)" },
+            new() { Code = "notin", Display = "Not In" },
+            new() { Code = "null", Display = "Is Null" },
+            new() { Code = "notnull", Display = "Is Not Null" },
+            new() { Code = "like", Display = "Like (pattern)" }
+        };
     }
 
     internal class ConfiguredRelationship
