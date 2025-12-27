@@ -1,41 +1,32 @@
-using System;
 using System.ComponentModel.Composition;
+using System.Windows.Forms;
 using XrmToolBox.Extensibility;
 using XrmToolBox.Extensibility.Interfaces;
-using System.ComponentModel.Composition.Primitives;
+using CascadeFields.Configurator.Controls;
 
 namespace CascadeFields.Configurator
 {
     [Export(typeof(IXrmToolBoxPlugin))]
-    [PartCreationPolicy(CreationPolicy.NonShared)]
     [ExportMetadata("Name", "CascadeFields Configurator")]
     [ExportMetadata("Description", "Configure and deploy the CascadeFields Dataverse plugin.")]
-    [ExportMetadata("SmallImageBase64", TransparentPngBase64)]
-    [ExportMetadata("BigImageBase64", TransparentPngBase64)]
-    [ExportMetadata("BackgroundColor", "#0A2D4A")]
+    [ExportMetadata("SmallImageBase64", null)]
+    [ExportMetadata("BigImageBase64", null)]
+    [ExportMetadata("BackgroundColor", "#0078D4")]
     [ExportMetadata("PrimaryFontColor", "#FFFFFF")]
-    [ExportMetadata("SecondaryFontColor", "#D0E6F7")]
-    public class CascadeFieldsConfiguratorPlugin : PluginBase, IHelpPlugin, IGitHubPlugin
+    [ExportMetadata("SecondaryFontColor", "#FFFFFF")]
+    public class CascadeFieldsConfiguratorPlugin : PluginBase, IHelpPlugin, IAboutPlugin
     {
-        private static readonly Guid PluginId = new Guid("f3e7c5e9-2f7a-4cde-9da0-8b8e5e6c33ad");
-        private const string TransparentPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/xcAAn8B9UhtqL4AAAAASUVORK5CYII=";
+        public string HelpUrl => "https://github.com/mscottsewell/CascadeFields";
 
         public override IXrmToolBoxPluginControl GetControl()
         {
             return new CascadeFieldsConfiguratorControl();
         }
 
-        public override Guid GetId()
+        public void ShowAboutDialog()
         {
-            return PluginId;
+            var message = "CascadeFields Configurator\nConfigure mappings, publish plugin steps, and update the CascadeFields plugin assembly.";
+            MessageBox.Show(message, "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
-
-        public string HelpUrl => "https://github.com/mscottsewell/CascadeFields";
-
-        public string RepositoryUrl => "https://github.com/mscottsewell/CascadeFields";
-
-        public string UserName => "mscottsewell";
-
-        public string RepositoryName => "CascadeFields";
     }
 }

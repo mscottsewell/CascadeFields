@@ -53,13 +53,14 @@ function Ensure-NugetExe {
     return $nugetPath
 }
 
-Write-Info "Building solution ($Configuration)..."
+Write-Info "Restoring and building solution ($Configuration)..."
+& dotnet restore (Join-Path $PSScriptRoot "CascadeFields.sln")
 & dotnet build (Join-Path $PSScriptRoot "CascadeFields.sln") -c $Configuration
 
 $projDir = Join-Path $PSScriptRoot "CascadeFields.Configurator"
-$buildOutput = Join-Path $projDir "bin/$Configuration/net48"
+$buildOutput = Join-Path $projDir "bin/$Configuration/net462"
 $assemblyPath = Join-Path $buildOutput "CascadeFields.Configurator.dll"
-$assetsPluginDir = Join-Path $projDir "Assets/plugin"
+$assetsPluginDir = Join-Path $projDir "Assets/DataversePlugin"
 if (-not (Test-Path $assemblyPath)) {
     throw "Build output not found at $assemblyPath"
 }
@@ -76,6 +77,14 @@ if ([string]::IsNullOrWhiteSpace($version)) {
 # NuGet does not accept build metadata (+suffix); strip anything after '+'
 if ($version -like "*+*") {
     $version = $version.Split('+')[0]
+}
+
+# NuGet requires SemVer (three numeric segments). Trim a 4th segment if present.
+try {
+    $v = [Version]$version
+    $version = "$($v.Major).$($v.Minor).$($v.Build)"
+} catch {
+    # If parsing fails, leave as-is
 }
 
 $nugetExe = Ensure-NugetExe
@@ -112,25 +121,65 @@ if (-not (Test-Path $packagePath)) {
 
 if (-not $SkipDeploy) {
     Write-Info "Deploying locally for XrmToolBox testing..."
+    
+    # Ensure root plugins path exists
     if (-not (Test-Path $XrmToolBoxPluginsPath)) {
-        throw "XrmToolBox plugins path not found: $XrmToolBoxPluginsPath"
+        New-Item -ItemType Directory -Force -Path $XrmToolBoxPluginsPath | Out-Null
+    }
+    
+    # Deploy to CascadeFieldsConfigurator subdirectory for Assets
+    $pluginSubfolder = Join-Path $XrmToolBoxPluginsPath "CascadeFieldsConfigurator"
+    if (-not (Test-Path $pluginSubfolder)) {
+        New-Item -ItemType Directory -Force -Path $pluginSubfolder | Out-Null
     }
 
-    $payload = @()
-    $payload += Get-Item (Join-Path $buildOutput "CascadeFields.Configurator.dll")
+    # Copy main DLL and PDB to ROOT plugins folder only (XrmToolBox discovers plugins here)
+    try {
+        Copy-Item (Join-Path $buildOutput "CascadeFields.Configurator.dll") -Destination $XrmToolBoxPluginsPath -Force
+        Write-Info "Copied CascadeFields.Configurator.dll to Plugins root"
+    } catch {
+        Write-Warning "Could not copy CascadeFields.Configurator.dll: $($_.Exception.Message)"
+    }
+    
     if (Test-Path (Join-Path $buildOutput "CascadeFields.Configurator.pdb")) {
-        $payload += Get-Item (Join-Path $buildOutput "CascadeFields.Configurator.pdb")
-    }
-    $payload += Get-ChildItem $assetsPluginDir -File
-
-    foreach ($file in $payload) {
         try {
-            Copy-Item $file.FullName -Destination $XrmToolBoxPluginsPath -Force
+            Copy-Item (Join-Path $buildOutput "CascadeFields.Configurator.pdb") -Destination $XrmToolBoxPluginsPath -Force
+            Write-Info "Copied CascadeFields.Configurator.pdb to Plugins root"
         } catch {
-            Write-Warning "Could not copy $($file.Name): $($_.Exception.Message)"
+            Write-Warning "Could not copy CascadeFields.Configurator.pdb: $($_.Exception.Message)"
         }
     }
-    Write-Info "Attempted to copy $($payload.Count) files to $XrmToolBoxPluginsPath"
+    
+    # Copy Plugin DLL to root Plugins folder so XrmToolBox can resolve the assembly reference
+    $pluginDll = Join-Path $pluginBuild "CascadeFields.Plugin.dll"
+    if (Test-Path $pluginDll) {
+        try {
+            Copy-Item $pluginDll -Destination $XrmToolBoxPluginsPath -Force
+            Write-Info "Copied CascadeFields.Plugin.dll to Plugins root"
+        } catch {
+            Write-Warning "Could not copy CascadeFields.Plugin.dll: $($_.Exception.Message)"
+        }
+    }
+
+    # Copy Assets folder to CascadeFieldsConfigurator subfolder
+    $assetsDestination = Join-Path $pluginSubfolder "Assets"
+    if (Test-Path $assetsDestination) {
+        Remove-Item $assetsDestination -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    
+    $assetsSource = Join-Path $projDir "Assets"
+    if (Test-Path $assetsSource) {
+        try {
+            Copy-Item $assetsSource -Destination $assetsDestination -Recurse -Force
+            Write-Info "Copied Assets folder to $assetsDestination"
+        } catch {
+            Write-Warning "Could not copy Assets folder: $($_.Exception.Message)"
+        }
+    } else {
+        Write-Warning "Assets folder not found at $assetsSource"
+    }
+    
+    Write-Info "Deployment complete: DLL in Plugins root, Assets in CascadeFieldsConfigurator subfolder"
 }
 
 if (-not $SkipPush) {

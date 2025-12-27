@@ -156,3 +156,25 @@ If you encounter issues:
 4. ✅ Ensure PreImage is registered correctly
 5. ✅ Confirm filtering attributes are set
 6. ✅ Test in a development environment first
+
+## 8. Package and Push to NuGet
+
+Use the helper script to rebuild, package, and optionally publish the configurator and bundled plugin.
+
+```powershell
+# Build, pack, and deploy locally (skips NuGet push)
+pwsh -File ./pack-nuget.ps1 -Configuration Release -SkipPush
+
+# Build, pack, deploy locally, and push to NuGet (set key via env var or parameter)
+$env:NUGET_API_KEY = "<your-key>"
+pwsh -File ./pack-nuget.ps1 -Configuration Release
+
+# Build and pack only (no local deploy, no push)
+pwsh -File ./pack-nuget.ps1 -Configuration Release -SkipDeploy -SkipPush
+```
+
+Notes:
+
+- The script also copies the built payload to your local XrmToolBox plugins folder for immediate testing.
+- Default source: <https://api.nuget.org/v3/index.json>; override with `-NugetSource <feedUrl>`.
+- Package output: artifacts/nuget/CascadeFields.Configurator.{version}.nupkg.

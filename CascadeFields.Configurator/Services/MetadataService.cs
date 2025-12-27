@@ -1,370 +1,283 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Xml.Linq;
+using CascadeFields.Configurator.Models;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
+using Microsoft.Xrm.Sdk.Metadata.Query;
 using Microsoft.Xrm.Sdk.Query;
 
 namespace CascadeFields.Configurator.Services
 {
-    public class MetadataService
+    internal class MetadataService
     {
         private readonly IOrganizationService _service;
-        private readonly Dictionary<string, string> _entityDisplayNameCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         public MetadataService(IOrganizationService service)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
         }
 
-        public string GetEntityDisplayName(string logicalName)
+        public Task<List<SolutionItem>> GetUnmanagedSolutionsAsync()
         {
-            if (string.IsNullOrWhiteSpace(logicalName))
+            return Task.Run(() =>
             {
-                return string.Empty;
-            }
-
-            if (_entityDisplayNameCache.TryGetValue(logicalName, out var cached))
-            {
-                return cached;
-            }
-
-            var metadata = RetrieveEntity(logicalName, EntityFilters.Entity);
-            var display = metadata.DisplayName?.UserLocalizedLabel?.Label ?? logicalName;
-            if (string.IsNullOrWhiteSpace(display))
-            {
-                display = logicalName;
-            }
-
-            _entityDisplayNameCache[logicalName] = display;
-            return display;
-        }
-
-        public List<SolutionOption> GetUnmanagedSolutions()
-        {
-            var query = new QueryExpression("solution")
-            {
-                ColumnSet = new ColumnSet("friendlyname", "uniquename", "solutionid"),
-                Criteria = new FilterExpression(LogicalOperator.And)
-            };
-
-            query.Criteria.AddCondition("ismanaged", ConditionOperator.Equal, false);
-            query.AddOrder("friendlyname", OrderType.Ascending);
-
-            var results = _service.RetrieveMultiple(query);
-
-            return results.Entities.Select(e => new SolutionOption
-            {
-                Id = e.Id,
-                FriendlyName = e.GetAttributeValue<string>("friendlyname"),
-                UniqueName = e.GetAttributeValue<string>("uniquename")
-            }).ToList();
-        }
-
-        public List<EntityOption> GetEntitiesForSolution(Guid solutionId)
-        {
-            const int EntityComponentType = 1;
-            var componentQuery = new QueryExpression("solutioncomponent")
-            {
-                ColumnSet = new ColumnSet("objectid"),
-                Criteria = new FilterExpression(LogicalOperator.And)
-            };
-
-            componentQuery.Criteria.AddCondition("solutionid", ConditionOperator.Equal, solutionId);
-            componentQuery.Criteria.AddCondition("componenttype", ConditionOperator.Equal, EntityComponentType);
-
-            var componentResults = _service.RetrieveMultiple(componentQuery);
-
-            var entityIds = componentResults.Entities
-                .Select(e => e.GetAttributeValue<Guid>("objectid"))
-                .Where(id => id != Guid.Empty)
-                .Distinct()
-                .ToList();
-
-            var entities = new List<EntityOption>();
-
-            foreach (var metadataId in entityIds)
-            {
-                try
+                var query = new QueryExpression("solution")
                 {
-                    var request = new RetrieveEntityRequest
-                    {
-                        MetadataId = metadataId,
-                        EntityFilters = EntityFilters.Entity,
-                        RetrieveAsIfPublished = true
-                    };
+                    ColumnSet = new ColumnSet("solutionid", "friendlyname", "uniquename", "ismanaged", "isvisible"),
+                    Orders = { new OrderExpression("friendlyname", OrderType.Ascending) }
+                };
 
-                    var response = (RetrieveEntityResponse)_service.Execute(request);
-                    var metadata = response.EntityMetadata;
-                    entities.Add(new EntityOption
+                query.Criteria.AddCondition("ismanaged", ConditionOperator.Equal, false);
+                query.Criteria.AddCondition("isvisible", ConditionOperator.Equal, true);
+
+                var results = _service.RetrieveMultiple(query);
+                var systemSolutions = new[] { "Active", "Basic", "Common" };
+                return results.Entities
+                    .Select(e => new SolutionItem
                     {
-                        MetadataId = metadata.MetadataId ?? Guid.Empty,
-                        LogicalName = metadata.LogicalName,
-                        DisplayName = metadata.DisplayName?.UserLocalizedLabel?.Label ?? metadata.LogicalName
-                    });
-                }
-                catch (Exception)
+                        Id = e.Id,
+                        FriendlyName = e.GetAttributeValue<string>("friendlyname") ?? "(no name)",
+                        UniqueName = e.GetAttributeValue<string>("uniquename") ?? string.Empty
+                    })
+                    .Where(s => !systemSolutions.Contains(s.UniqueName, StringComparer.OrdinalIgnoreCase) &&
+                               !s.FriendlyName.Equals("Common Data Service Default Solution", StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            });
+        }
+
+        public Task<List<EntityMetadata>> GetSolutionEntitiesAsync(string solutionUniqueName)
+        {
+            if (string.IsNullOrWhiteSpace(solutionUniqueName))
+            {
+                throw new ArgumentNullException(nameof(solutionUniqueName));
+            }
+
+            return Task.Run(() =>
+            {
+                // Resolve solution id from unique name
+                var solutionQuery = new QueryExpression("solution")
                 {
-                    // Skip invalid or inaccessible entity metadata IDs
-                    // (could be incorrect component type or deleted entity)
-                    continue;
+                    ColumnSet = new ColumnSet("solutionid"),
+                    Criteria =
+                    {
+                        Conditions =
+                        {
+                            new ConditionExpression("uniquename", ConditionOperator.Equal, solutionUniqueName)
+                        }
+                    }
+                };
+
+                var solution = _service.RetrieveMultiple(solutionQuery).Entities.FirstOrDefault();
+                var solutionId = solution?.Id ?? Guid.Empty;
+                if (solutionId == Guid.Empty)
+                {
+                    return new List<EntityMetadata>();
                 }
-            }
 
-            return entities.OrderBy(e => e.DisplayName).ToList();
-        }
-
-        public List<ViewOption> GetViewsForEntity(Guid solutionId, string entityLogicalName)
-        {
-            const int SavedQueryComponentType = 26;
-            var componentQuery = new QueryExpression("solutioncomponent")
-            {
-                ColumnSet = new ColumnSet("objectid"),
-                Criteria = new FilterExpression(LogicalOperator.And)
-            };
-
-            componentQuery.Criteria.AddCondition("solutionid", ConditionOperator.Equal, solutionId);
-            componentQuery.Criteria.AddCondition("componenttype", ConditionOperator.Equal, SavedQueryComponentType);
-
-            var componentResults = _service.RetrieveMultiple(componentQuery);
-            var viewIds = componentResults.Entities
-                .Select(e => e.GetAttributeValue<Guid>("objectid"))
-                .Where(id => id != Guid.Empty)
-                .Distinct()
-                .ToList();
-
-            if (viewIds.Count == 0)
-            {
-                return new List<ViewOption>();
-            }
-
-            var viewQuery = new QueryExpression("savedquery")
-            {
-                ColumnSet = new ColumnSet("savedqueryid", "name", "fetchxml", "returnedtypecode"),
-                Criteria = new FilterExpression(LogicalOperator.And)
-            };
-
-            viewQuery.Criteria.AddCondition("savedqueryid", ConditionOperator.In, viewIds.Cast<object>().ToArray());
-            viewQuery.Criteria.AddCondition("returnedtypecode", ConditionOperator.Equal, entityLogicalName);
-            viewQuery.Criteria.AddCondition("statecode", ConditionOperator.Equal, 0);
-
-            var viewResults = _service.RetrieveMultiple(viewQuery);
-
-            return viewResults.Entities.Select(v => new ViewOption
-            {
-                Id = v.Id,
-                Name = v.GetAttributeValue<string>("name"),
-                FetchXml = v.GetAttributeValue<string>("fetchxml") ?? string.Empty
-            })
-            .OrderBy(v => v.Name, StringComparer.Create(CultureInfo.CurrentCulture, true))
-            .ToList();
-        }
-
-        public List<FormOption> GetFormsForEntity(Guid solutionId, string entityLogicalName)
-        {
-            if (string.IsNullOrWhiteSpace(entityLogicalName))
-            {
-                return new List<FormOption>();
-            }
-            
-            const int SystemFormComponentType = 60;
-
-            var formIds = new List<Guid>();
-
-            if (solutionId != Guid.Empty)
-            {
+                // Get entity component ids from the solution
                 var componentQuery = new QueryExpression("solutioncomponent")
                 {
                     ColumnSet = new ColumnSet("objectid"),
-                    Criteria = new FilterExpression(LogicalOperator.And)
+                    Criteria =
+                    {
+                        Conditions =
+                        {
+                            new ConditionExpression("solutionid", ConditionOperator.Equal, solutionId),
+                            new ConditionExpression("componenttype", ConditionOperator.Equal, 1) // Entity
+                        }
+                    }
                 };
 
-                componentQuery.Criteria.AddCondition("solutionid", ConditionOperator.Equal, solutionId);
-                componentQuery.Criteria.AddCondition("componenttype", ConditionOperator.Equal, SystemFormComponentType);
-
-                var componentResults = _service.RetrieveMultiple(componentQuery);
-                formIds = componentResults.Entities
+                var components = _service.RetrieveMultiple(componentQuery);
+                var entityIds = new HashSet<Guid>(components.Entities
                     .Select(e => e.GetAttributeValue<Guid>("objectid"))
-                    .Where(id => id != Guid.Empty)
-                    .Distinct()
+                    .Where(id => id != Guid.Empty));
+
+                // Retrieve ALL entities in one batch request (no filter), then filter in memory
+                // This is much faster than individual requests
+                var entityProperties = new MetadataPropertiesExpression
+                {
+                    AllProperties = false
+                };
+                entityProperties.PropertyNames.AddRange(new[]
+                {
+                    "MetadataId", "LogicalName", "DisplayName", "PrimaryIdAttribute", "PrimaryNameAttribute",
+                    "IsIntersect", "IsCustomizable", "Attributes", "OneToManyRelationships", "ManyToOneRelationships"
+                });
+
+                var entityQueryExpression = new EntityQueryExpression
+                {
+                    Properties = entityProperties,
+                    AttributeQuery = new AttributeQueryExpression
+                    {
+                        Properties = new MetadataPropertiesExpression
+                        {
+                            AllProperties = false,
+                            PropertyNames = { "LogicalName", "DisplayName", "AttributeType", "IsValidForUpdate", "IsLogical" }
+                        }
+                    },
+                    RelationshipQuery = new RelationshipQueryExpression
+                    {
+                        Properties = new MetadataPropertiesExpression { AllProperties = true }
+                    }
+                };
+
+                var retrieveMetadataChangesRequest = new RetrieveMetadataChangesRequest
+                {
+                    Query = entityQueryExpression,
+                    ClientVersionStamp = null
+                };
+
+                var metadataResponse = (RetrieveMetadataChangesResponse)_service.Execute(retrieveMetadataChangesRequest);
+                
+                // Filter to only entities in this solution, excluding intersection and non-customizable entities
+                var entities = metadataResponse.EntityMetadata
+                    .Where(e => entityIds.Contains(e.MetadataId.GetValueOrDefault()))
+                    .Where(e => e.IsIntersect != true && e.IsCustomizable?.Value != false)
                     .ToList();
 
-                if (formIds.Count == 0)
-                {
-                    return new List<FormOption>();
-                }
-            }
-
-            var query = new QueryExpression("systemform")
-            {
-                ColumnSet = new ColumnSet("name", "formid", "type", "formxml"),
-                Criteria = new FilterExpression(LogicalOperator.And)
-            };
-
-            // Type 2 = Main form
-            query.Criteria.AddCondition("type", ConditionOperator.Equal, 2);
-            query.Criteria.AddCondition("objecttypecode", ConditionOperator.Equal, entityLogicalName);
-
-            if (formIds.Count > 0)
-            {
-                query.Criteria.AddCondition("formid", ConditionOperator.In, formIds.Cast<object>().ToArray());
-            }
-
-            var results = _service.RetrieveMultiple(query);
-
-            return results.Entities.Select(e =>
-            {
-                var form = new FormOption
-                {
-                    Id = e.Id,
-                    Name = e.GetAttributeValue<string>("name") ?? string.Empty,
-                    Fields = ExtractFieldsFromFormXml(e.GetAttributeValue<string>("formxml") ?? string.Empty)
-                };
-
-                return form;
-            })
-            .OrderBy(f => f.Name, StringComparer.Create(CultureInfo.CurrentCulture, true))
-            .ToList();
+                return entities;
+            });
         }
 
-        public List<LookupFieldOption> GetLookupFields(string entityLogicalName)
-        {
-            var metadata = RetrieveEntity(entityLogicalName, EntityFilters.Attributes);
-            var lookupAttributes = metadata.Attributes
-                .OfType<LookupAttributeMetadata>()
-                .Where(a => a.IsValidForUpdate == true)
-                .ToList();
-
-            // Customer and owner attributes also derive from LookupAttributeMetadata
-            return lookupAttributes.Select(a => new LookupFieldOption
-            {
-                LogicalName = a.LogicalName,
-                DisplayName = a.DisplayName?.UserLocalizedLabel?.Label ?? a.LogicalName,
-                Targets = a.Targets ?? Array.Empty<string>()
-            }).OrderBy(l => l.DisplayName).ToList();
-        }
-
-        public (List<AttributeOption> parentAttributes, List<AttributeOption> childAttributes) GetAttributeOptions(string parentLogicalName, string childLogicalName)
-        {
-            if (string.IsNullOrWhiteSpace(parentLogicalName) || string.IsNullOrWhiteSpace(childLogicalName))
-            {
-                return (new List<AttributeOption>(), new List<AttributeOption>());
-            }
-            
-            var parent = RetrieveEntity(parentLogicalName, EntityFilters.Attributes);
-            var child = RetrieveEntity(childLogicalName, EntityFilters.Attributes);
-
-            var parentOptions = parent.Attributes
-                .Where(IsEligibleAttribute)
-                .Select(ToAttributeOption)
-                .OrderBy(a => a.DisplayName)
-                .ToList();
-
-            var childOptions = child.Attributes
-                .Where(IsEligibleAttribute)
-                .Select(ToAttributeOption)
-                .OrderBy(a => a.DisplayName)
-                .ToList();
-
-            return (parentOptions, childOptions);
-        }
-
-        private EntityMetadata RetrieveEntity(string logicalName, EntityFilters filters)
+        public Task<EntityMetadata?> GetEntityMetadataAsync(string logicalName)
         {
             if (string.IsNullOrWhiteSpace(logicalName))
             {
-                throw new ArgumentException("Entity logical name cannot be null or empty", nameof(logicalName));
+                throw new ArgumentNullException(nameof(logicalName));
             }
-            
-            var request = new RetrieveEntityRequest
-            {
-                LogicalName = logicalName,
-                EntityFilters = filters,
-                RetrieveAsIfPublished = true
-            };
 
-            var response = (RetrieveEntityResponse)_service.Execute(request);
-            return response.EntityMetadata;
+            return Task.Run(() =>
+            {
+                var request = new RetrieveEntityRequest
+                {
+                    LogicalName = logicalName,
+                    EntityFilters = EntityFilters.Entity | EntityFilters.Attributes | EntityFilters.Relationships,
+                    RetrieveAsIfPublished = false
+                };
+
+                var response = (RetrieveEntityResponse)_service.Execute(request);
+                return response?.EntityMetadata;
+            });
         }
 
-        private bool IsEligibleAttribute(AttributeMetadata attribute)
+        public Task<List<FormItem>> GetMainFormsAsync(string entityLogicalName)
         {
-            if (attribute == null)
+            return Task.Run(() =>
             {
-                return false;
-            }
+                var query = new QueryExpression("systemform")
+                {
+                    ColumnSet = new ColumnSet("formid", "name", "formxml"),
+                    Criteria = new FilterExpression(LogicalOperator.And),
+                    Orders = { new OrderExpression("name", OrderType.Ascending) }
+                };
 
-            if (attribute.IsValidForUpdate != true)
-            {
-                return false;
-            }
+                query.Criteria.AddCondition("type", ConditionOperator.Equal, 2); // Main
+                query.Criteria.AddCondition("objecttypecode", ConditionOperator.Equal, entityLogicalName);
 
-            if (attribute.AttributeOf != null)
-            {
-                return false;
-            }
-
-            switch (attribute.AttributeType)
-            {
-                case AttributeTypeCode.Virtual:
-                case AttributeTypeCode.Uniqueidentifier:
-                case AttributeTypeCode.CalendarRules:
-                case AttributeTypeCode.ManagedProperty:
-                    return false;
-                default:
-                    return true;
-            }
+                var response = _service.RetrieveMultiple(query);
+                return response.Entities
+                    .Select(e => new FormItem
+                    {
+                        Id = e.Id,
+                        Name = e.GetAttributeValue<string>("name") ?? "Unnamed form",
+                        FormXml = e.GetAttributeValue<string>("formxml") ?? string.Empty
+                    })
+                    .ToList();
+            });
         }
 
-        private AttributeOption ToAttributeOption(AttributeMetadata attribute)
+        public IEnumerable<AttributeItem> GetAttributeItems(EntityMetadata entity, HashSet<string>? formFields = null)
         {
-            var targets = Array.Empty<string>();
-            if (attribute is LookupAttributeMetadata lookupMeta && lookupMeta.Targets != null)
+            if (entity?.Attributes == null)
             {
-                targets = lookupMeta.Targets;
+                return Enumerable.Empty<AttributeItem>();
             }
 
-            return new AttributeOption
-            {
-                LogicalName = attribute.LogicalName,
-                DisplayName = attribute.DisplayName?.UserLocalizedLabel?.Label ?? attribute.LogicalName,
-                AttributeType = attribute.AttributeType,
-                Format = attribute.AttributeTypeName?.Value ?? string.Empty,
-                Targets = targets
-            };
+            var attributes = entity.Attributes
+                .Where(a => a.IsValidForUpdate == true && !a.IsLogical.GetValueOrDefault())
+                .Where(a => formFields == null || formFields.Contains(a.LogicalName))
+                .Select(a => new AttributeItem
+                {
+                    LogicalName = a.LogicalName,
+                    DisplayName = a.DisplayName?.UserLocalizedLabel?.Label ?? a.LogicalName,
+                    Metadata = a
+                })
+                .OrderBy(a => a.DisplayName)
+                .ToList();
+
+            return attributes;
         }
 
-        private HashSet<string> ExtractFieldsFromFormXml(string formXml)
+        public IEnumerable<RelationshipItem> GetChildRelationships(EntityMetadata parent, IReadOnlyCollection<EntityMetadata> allEntities)
         {
-            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (parent?.OneToManyRelationships == null)
+            {
+                return Enumerable.Empty<RelationshipItem>();
+            }
+
+            // Only include relationships where the referencing entity exists in the current solution set.
+            // DO NOT group - we want all relationships shown, even if multiple exist from same child entity
+            var relationships = parent.OneToManyRelationships
+                .Where(r => string.Equals(r.ReferencedEntity, parent.LogicalName, StringComparison.OrdinalIgnoreCase))
+                .Where(r => !string.IsNullOrWhiteSpace(r.ReferencingEntity) && !string.IsNullOrWhiteSpace(r.ReferencingAttribute))
+                .Select(r => new
+                {
+                    Relationship = r,
+                    Child = allEntities.FirstOrDefault(e => string.Equals(e.LogicalName, r.ReferencingEntity, StringComparison.OrdinalIgnoreCase))
+                })
+                .Where(x => x.Child != null)
+                .Select(x =>
+                {
+                    var childDisplayName = x.Child!.DisplayName?.UserLocalizedLabel?.Label
+                                         ?? x.Relationship.ReferencingEntity
+                                         ?? string.Empty;
+                    return new RelationshipItem
+                    {
+                        SchemaName = x.Relationship.SchemaName,
+                        ReferencingEntity = x.Relationship.ReferencingEntity ?? string.Empty,
+                        ReferencingAttribute = x.Relationship.ReferencingAttribute ?? string.Empty,
+                        DisplayName = childDisplayName
+                    };
+                })
+                .OrderBy(r => r.DisplayName)
+                .ThenBy(r => r.ReferencingAttribute)
+                .ToList();
+
+            return relationships;
+        }
+
+        public HashSet<string> GetFieldsFromFormXml(string formXml)
+        {
+            var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (string.IsNullOrWhiteSpace(formXml))
             {
-                return set;
+                return fields;
             }
 
             try
             {
-                var doc = XDocument.Parse(formXml);
-                // Form XML uses a default namespace, so match on LocalName rather than the full name
-                var controls = doc.Descendants()
-                    .Where(e => string.Equals(e.Name.LocalName, "control", StringComparison.OrdinalIgnoreCase))
-                    .Select(c => c.Attribute("datafieldname")?.Value)
-                    .Where(v => !string.IsNullOrWhiteSpace(v));
-
-                foreach (var field in controls)
+                var xdoc = XDocument.Parse(formXml);
+                var controls = xdoc.Descendants().Where(x => x.Name.LocalName.Equals("control", StringComparison.OrdinalIgnoreCase));
+                foreach (var control in controls)
                 {
-                    set.Add(field!);
+                    var logicalName = control.Attribute("datafieldname")?.Value;
+                    if (!string.IsNullOrWhiteSpace(logicalName))
+                    {
+                        fields.Add(logicalName!);
+                    }
                 }
             }
             catch
             {
-                // Ignore malformed form xml
+                // Ignore malformed form XML
             }
 
-            return set;
+            return fields;
         }
     }
 }

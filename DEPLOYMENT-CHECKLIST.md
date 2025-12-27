@@ -142,7 +142,7 @@ _Use this section for environment-specific notes, special considerations, or iss
 
 ---
 
-**Plugin Version**: 1.0.0  
+**Plugin Version**: 1.0.1  
 **Deployment Date**: _______________  
 **Environment**: _______________  
 **Deployed By**: _______________
