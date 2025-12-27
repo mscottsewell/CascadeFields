@@ -25,6 +25,13 @@ namespace CascadeFields.Configurator.Controls
     public partial class CascadeFieldsConfiguratorControl : PluginControlBase
     {
         private readonly BindingList<MappingRow> _mappingRows = new();
+        // NEW: Store mapping rows for additional child entity tabs (beyond the first/selected one)
+        private readonly Dictionary<string, BindingList<MappingRow>> _additionalChildMappings = new(StringComparer.OrdinalIgnoreCase);
+        // NEW: Store relationship info per child entity tab
+        private readonly Dictionary<string, RelationshipItem> _childRelationships = new(StringComparer.OrdinalIgnoreCase);
+        // NEW: Store filter criteria per child entity tab
+        private readonly Dictionary<string, List<SavedFilterCriteria>> _filterCriteriaPerTab = new(StringComparer.OrdinalIgnoreCase);
+        
         private readonly Dictionary<string, List<EntityMetadata>> _solutionEntityCache = new(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _parentFormFields = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, TabPage> _childEntityTabs = new(StringComparer.OrdinalIgnoreCase);
@@ -80,9 +87,13 @@ namespace CascadeFields.Configurator.Controls
                 _mappingRows.Add(new MappingRow());
             }
 
-            // Wire up filter control events
-            filterControl.FilterChanged += (s, e) => UpdateJsonPreview();
+            // Wire up filter control events - save current tab's filters when changed
+            filterControl.FilterChanged += (s, e) => SaveCurrentTabFilters();
             chkEnableTracing.CheckedChanged += (s, e) => UpdateJsonPreview();
+
+            // Wire up tab control events for per-tab filter management
+            tabControlRightUpper.Selected += TabControlRightUpper_Selected;
+            tabControlRightUpper.MouseDown += TabControlRightUpper_MouseDown;  // For close button
 
             btnLoadMetadata.Click += async (s, e) => await LoadSolutionsAsync();
             btnRetrieveConfigured.Click += async (s, e) => await RetrieveConfiguredAsync();
@@ -753,8 +764,8 @@ namespace CascadeFields.Configurator.Controls
         {
             if (relationship == null) return;
 
-            var tabKey = relationship.ReferencingEntity;
-            var tabName = relationship.DisplayName;
+            var tabKey = relationship.SchemaName;
+            var tabName = $"{relationship.DisplayName} ({relationship.SchemaName})";
 
             // Check if tab already exists
             if (_childEntityTabs.TryGetValue(tabKey, out var existingTab))
@@ -769,7 +780,27 @@ namespace CascadeFields.Configurator.Controls
                 Padding = new Padding(4)
             };
 
-            // Create a new DataGridView for this tab
+            // CREATE SEPARATE BINDINGLIST FOR THIS TAB
+            // First tab uses _mappingRows for backward compatibility, additional tabs get their own
+            BindingList<MappingRow> tabMappings;
+            if (_childEntityTabs.Count == 0)
+            {
+                // First tab - use existing _mappingRows
+                tabMappings = _mappingRows;
+            }
+            else
+            {
+                // Additional tab - create new mapping list
+                tabMappings = new BindingList<MappingRow>();
+                tabMappings.Add(new MappingRow()); // Start with one blank row
+                tabMappings.ListChanged += (s, e) => UpdateJsonPreview();
+                _additionalChildMappings[tabKey] = tabMappings;
+            }
+
+            // Store the relationship for this tab
+            _childRelationships[tabKey] = relationship;
+
+            // Create a new DataGridView for this tab with its own data source
             var newGrid = new DataGridView
             {
                 Dock = DockStyle.Fill,
@@ -777,8 +808,11 @@ namespace CascadeFields.Configurator.Controls
                 AutoGenerateColumns = false,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 RowHeadersVisible = false,
-                DataSource = _mappingRows
+                DataSource = tabMappings  // Each tab gets its own binding list
             };
+
+            // Store reference to grid in tab's Tag for later retrieval
+            newTab.Tag = new { Grid = newGrid, Relationship = relationship, Mappings = tabMappings };
 
             // Clone the column definitions from the main grid
             var clonedSourceCol = (DataGridViewComboBoxColumn)colSourceField.Clone();
@@ -821,7 +855,7 @@ namespace CascadeFields.Configurator.Controls
             tabControlRightUpper.TabPages.Add(newTab);
             tabControlRightUpper.SelectedTab = newTab;
 
-            AppendLog($"Created tab for child entity: {tabName}");
+            AppendLog($"Created tab for child entity: {tabName} (Total tabs: {_childEntityTabs.Count})");
         }
 
         private void OnParentFormChanged()
@@ -1389,23 +1423,86 @@ namespace CascadeFields.Configurator.Controls
 
         private void UpdateJsonPreview()
         {
-            if (cmbParentEntity.SelectedItem is not EntityItem parent || _selectedRelationship == null)
+            if (cmbParentEntity.SelectedItem is not EntityItem parent)
             {
-                txtJsonPreview.Text = "Select a parent and child entity to preview configuration.";
+                txtJsonPreview.Text = "Select a parent entity to preview configuration.";
                 return;
             }
 
-            var mappings = _mappingRows
-                .Where(m => !string.IsNullOrWhiteSpace(m.SourceField) && !string.IsNullOrWhiteSpace(m.TargetField))
-                .Select(m => new FieldMapping
-                {
-                    SourceField = m.SourceField!,
-                    TargetField = m.TargetField!,
-                    IsTriggerField = m.IsTriggerField
-                })
-                .ToList();
+            // NEW: Collect RelatedEntityConfig from ALL child tabs
+            var relatedEntities = new List<RelatedEntityConfig>();
 
-            // Save mappings and filters to session
+            foreach (var tabKvp in _childEntityTabs)
+            {
+                var tabKey = tabKvp.Key;
+                var tab = tabKvp.Value;
+
+                // Get relationship and mappings for this tab
+                if (!_childRelationships.TryGetValue(tabKey, out var relationship))
+                {
+                    AppendLog($"Warning: No relationship found for tab {tab.Text}");
+                    continue;
+                }
+
+                // Get the grid and mapping data from tab Tag
+                var tabData = tab.Tag as dynamic;
+                if (tabData == null)
+                {
+                    AppendLog($"Warning: No data found for tab {tab.Text}");
+                    continue;
+                }
+
+                BindingList<MappingRow> tabMappings = tabData.Mappings;
+
+                // Convert mappings to FieldMapping objects
+                var mappings = tabMappings
+                    .Where(m => !string.IsNullOrWhiteSpace(m.SourceField) && !string.IsNullOrWhiteSpace(m.TargetField))
+                    .Select(m => new FieldMapping
+                    {
+                        SourceField = m.SourceField!,
+                        TargetField = m.TargetField!,
+                        IsTriggerField = m.IsTriggerField
+                    })
+                    .ToList();
+
+                // Skip tabs with no valid mappings
+                if (!mappings.Any())
+                {
+                    AppendLog($"Info: Tab {tab.Text} has no valid mappings, skipping");
+                    continue;
+                }
+
+                // Get per-tab filter criteria
+                string? filterString = null;
+                if (_filterCriteriaPerTab.TryGetValue(tabKey, out var tabFilters) && tabFilters.Any())
+                {
+                    filterString = string.Join(";", tabFilters.Select(f =>
+                    {
+                        var parts = new List<string> { f.Field ?? string.Empty, f.Operator ?? string.Empty };
+                        if (f.Operator != "null" && f.Operator != "notnull")
+                        {
+                            parts.Add(f.Value ?? string.Empty);
+                        }
+                        else
+                        {
+                            parts.Add("null");
+                        }
+                        return string.Join("|", parts);
+                    }));
+                }
+
+                relatedEntities.Add(new RelatedEntityConfig
+                {
+                    EntityName = relationship.ReferencingEntity,
+                    RelationshipName = relationship.SchemaName,
+                    LookupFieldName = relationship.ReferencingAttribute,
+                    UseRelationship = true,
+                    FilterCriteria = string.IsNullOrWhiteSpace(filterString) ? null : filterString,
+                    FieldMappings = mappings
+                });
+            }
+
+            // Save mappings and filters to session (only for first tab for backward compat)
             if (_session != null && !_isApplyingSession && !_isRestoringSession)
             {
                 _session.FieldMappings = _mappingRows
@@ -1422,31 +1519,23 @@ namespace CascadeFields.Configurator.Controls
                 SaveSettings();
             }
 
-            if (!mappings.Any())
+            if (!relatedEntities.Any())
             {
-                txtJsonPreview.Text = "Add at least one field mapping to preview configuration.";
+                txtJsonPreview.Text = "Add at least one child relationship with field mappings to preview configuration.";
                 return;
             }
 
-            var filterString = filterControl.GetFilterString();
+            // Generate name based on number of children
+            var configName = relatedEntities.Count == 1
+                ? $"{parent.DisplayName} to {relatedEntities[0].EntityName}"
+                : $"{parent.DisplayName} to {relatedEntities.Count} child entities";
 
             var config = new CascadeConfigurationModel
             {
                 Id = Guid.NewGuid().ToString(),
-                Name = $"{parent.DisplayName} to {_selectedRelationship.DisplayName}",
+                Name = configName,
                 ParentEntity = parent.LogicalName,
-                RelatedEntities = new List<RelatedEntityConfig>
-                {
-                    new RelatedEntityConfig
-                    {
-                        EntityName = _selectedRelationship.ReferencingEntity,
-                        RelationshipName = _selectedRelationship.SchemaName,
-                        LookupFieldName = _selectedRelationship.ReferencingAttribute,
-                        UseRelationship = true,
-                        FilterCriteria = string.IsNullOrWhiteSpace(filterString) ? null : filterString,
-                        FieldMappings = mappings
-                    }
-                },
+                RelatedEntities = relatedEntities,
                 EnableTracing = chkEnableTracing.Checked,
                 IsActive = true
             };
@@ -1518,56 +1607,135 @@ namespace CascadeFields.Configurator.Controls
                 }
             }
 
-            var related = configuration.RelatedEntities?.FirstOrDefault();
-            if (related == null)
+            // Clear existing child tabs and data
+            _childEntityTabs.Clear();
+            _additionalChildMappings.Clear();
+            _childRelationships.Clear();
+            _filterCriteriaPerTab.Clear();
+            tabControlRightUpper.TabPages.Clear();
+
+            var relatedEntities = configuration.RelatedEntities ?? new List<RelatedEntityConfig>();
+            if (!relatedEntities.Any())
             {
+                AppendLog("No child entities in configuration");
                 return;
-            }
-
-            // Align child entity selection
-            if (cmbChildEntity.DataSource is List<RelationshipItem> relationships)
-            {
-                var match = relationships.FirstOrDefault(r => r.SchemaName.Equals(related.RelationshipName, StringComparison.OrdinalIgnoreCase)
-                                                              || r.ReferencingEntity.Equals(related.EntityName, StringComparison.OrdinalIgnoreCase));
-                if (match != null)
-                {
-                    cmbChildEntity.SelectedItem = match;
-                }
-            }
-
-            _mappingRows.Clear();
-            foreach (var mapping in related.FieldMappings)
-            {
-                _mappingRows.Add(new MappingRow
-                {
-                    SourceField = mapping.SourceField,
-                    TargetField = mapping.TargetField,
-                    IsTriggerField = mapping.IsTriggerField
-                });
-            }
-
-            // Refresh attribute lists and dropdowns to ensure fields are loaded
-            // even if no form is selected (configuration from JSON may not have form context)
-            RefreshAttributeLists();
-            RefreshDestinationFieldDropdowns();
-            RefreshFilterFieldDropdowns();
-
-            // Apply filter criteria
-            if (!string.IsNullOrWhiteSpace(related.FilterCriteria))
-            {
-                filterControl.LoadFromFilterString(related.FilterCriteria);
-                AppendLog($"Loaded filter: {related.FilterCriteria}");
-            }
-            else
-            {
-                filterControl.ClearFilters();
             }
 
             // Apply tracing setting
             chkEnableTracing.Checked = configuration.EnableTracing;
 
+            // Load each child relationship as a separate tab
+            foreach (var related in relatedEntities)
+            {
+                // Find matching relationship
+                RelationshipItem? matchingRelationship = null;
+                if (cmbChildEntity.DataSource is List<RelationshipItem> relationships)
+                {
+                    matchingRelationship = relationships.FirstOrDefault(r => 
+                        r.SchemaName.Equals(related.RelationshipName, StringComparison.OrdinalIgnoreCase)
+                        || r.ReferencingEntity.Equals(related.EntityName, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (matchingRelationship == null)
+                {
+                    AppendLog($"Warning: Could not find relationship '{related.RelationshipName}' for entity '{related.EntityName}', skipping");
+                    continue;
+                }
+
+                // Temporarily select this relationship to trigger metadata load
+                cmbChildEntity.SelectedItem = matchingRelationship;
+
+                // Create or find the tab for this child entity
+                var tabKey = matchingRelationship.SchemaName;
+                TabPage? tab = null;
+                
+                if (_childEntityTabs.TryGetValue(tabKey, out tab))
+                {
+                    // Tab already exists, just update it
+                }
+                else
+                {
+                    // Create new tab for this relationship
+                    EnsureChildEntityTab(matchingRelationship);
+                    if (!_childEntityTabs.TryGetValue(tabKey, out tab))
+                    {
+                        AppendLog($"Error: Failed to create tab for {related.EntityName}");
+                        continue;
+                    }
+                }
+
+                // Get the appropriate BindingList for this tab
+                BindingList<MappingRow> targetMappings;
+                if (_childEntityTabs.Count == 1 && _childEntityTabs.First().Value == tab)
+                {
+                    targetMappings = _mappingRows; // First tab uses shared list
+                }
+                else
+                {
+                    if (!_additionalChildMappings.TryGetValue(tabKey, out targetMappings!))
+                    {
+                        targetMappings = new BindingList<MappingRow>();
+                        _additionalChildMappings[tabKey] = targetMappings;
+                    }
+                }
+
+                // Load mappings for this tab
+                targetMappings.Clear();
+                foreach (var mapping in related.FieldMappings)
+                {
+                    targetMappings.Add(new MappingRow
+                    {
+                        SourceField = mapping.SourceField,
+                        TargetField = mapping.TargetField,
+                        IsTriggerField = mapping.IsTriggerField
+                    });
+                }
+
+                // Store relationship info
+                _childRelationships[tabKey] = matchingRelationship;
+
+                // Load filter criteria for this tab
+                if (!string.IsNullOrWhiteSpace(related.FilterCriteria))
+                {
+                    var filters = new List<SavedFilterCriteria>();
+                    var filterParts = related.FilterCriteria.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                    
+                    foreach (var part in filterParts)
+                    {
+                        var components = part.Split('|');
+                        if (components.Length >= 2)
+                        {
+                            var filter = new SavedFilterCriteria
+                            {
+                                Field = components[0],
+                                Operator = components[1],
+                                Value = components.Length > 2 && components[2] != "null" ? components[2] : null
+                            };
+                            filters.Add(filter);
+                        }
+                    }
+
+                    _filterCriteriaPerTab[tabKey] = filters;
+                    AppendLog($"Loaded {filters.Count} filter(s) for {related.EntityName}: {related.FilterCriteria}");
+                }
+
+                AppendLog($"Loaded {targetMappings.Count} field mapping(s) for child entity '{related.EntityName}'");
+            }
+
+            // Refresh attribute lists and dropdowns to ensure fields are loaded
+            RefreshAttributeLists();
+            RefreshDestinationFieldDropdowns();
+            RefreshFilterFieldDropdowns();
+
+            // Select the first tab and load its filters
+            if (tabControlRightUpper.TabPages.Count > 0)
+            {
+                tabControlRightUpper.SelectedIndex = 0;
+                LoadCurrentTabFilters();
+            }
+
             UpdateJsonPreview();
-            AppendLog($"Configuration applied: {_mappingRows.Count} field mapping(s) loaded");
+            AppendLog($"Configuration applied: {relatedEntities.Count} child relationship(s) loaded");
         }
 
         private async System.Threading.Tasks.Task PublishConfigurationAsync()
@@ -1575,9 +1743,16 @@ namespace CascadeFields.Configurator.Controls
             if (!EnsureConnected()) return;
             EnsureServices();
 
-            if (_selectedRelationship == null || cmbParentEntity.SelectedItem is not EntityItem parent)
+            if (cmbParentEntity.SelectedItem is not EntityItem parent)
             {
-                MessageBox.Show("Select a parent and child entity before publishing.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Select a parent entity before publishing.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // NEW: Check if we have any child tabs with mappings
+            if (_childEntityTabs.Count == 0)
+            {
+                MessageBox.Show("Add at least one child relationship before publishing.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             
@@ -1587,42 +1762,100 @@ namespace CascadeFields.Configurator.Controls
                 return;
             }
 
-            var confirm = MessageBox.Show("This will create or update the CascadeFields step and pre-image for the selected parent/child relationship. Continue?",
+            var confirm = MessageBox.Show(
+                $"This will create or update the CascadeFields step and pre-image for {_childEntityTabs.Count} child relationship(s). Continue?",
                 "Confirm Publish", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (confirm != DialogResult.Yes)
             {
                 return;
             }
 
-            var mappings = _mappingRows.Where(m => !string.IsNullOrWhiteSpace(m.SourceField) && !string.IsNullOrWhiteSpace(m.TargetField)).ToList();
-            if (!mappings.Any())
+            // NEW: Collect RelatedEntityConfig from ALL child tabs (same logic as UpdateJsonPreview)
+            var relatedEntities = new List<RelatedEntityConfig>();
+
+            foreach (var tabKvp in _childEntityTabs)
             {
-                MessageBox.Show("Add at least one field mapping before publishing.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                var tabKey = tabKvp.Key;
+                var tab = tabKvp.Value;
+
+                if (!_childRelationships.TryGetValue(tabKey, out var relationship))
+                {
+                    AppendLog($"Warning: No relationship found for tab {tab.Text}, skipping");
+                    continue;
+                }
+
+                var tabData = tab.Tag as dynamic;
+                if (tabData == null)
+                {
+                    AppendLog($"Warning: No data found for tab {tab.Text}, skipping");
+                    continue;
+                }
+
+                BindingList<MappingRow> tabMappings = tabData.Mappings;
+
+                var mappings = tabMappings
+                    .Where(m => !string.IsNullOrWhiteSpace(m.SourceField) && !string.IsNullOrWhiteSpace(m.TargetField))
+                    .Select(m => new FieldMapping
+                    {
+                        SourceField = m.SourceField!,
+                        TargetField = m.TargetField!,
+                        IsTriggerField = m.IsTriggerField
+                    })
+                    .ToList();
+
+                if (!mappings.Any())
+                {
+                    AppendLog($"Warning: Tab {tab.Text} has no valid mappings, skipping");
+                    continue;
+                }
+
+                // Get per-tab filter criteria
+                string? filterString = null;
+                if (_filterCriteriaPerTab.TryGetValue(tabKey, out var tabFilters) && tabFilters.Any())
+                {
+                    filterString = string.Join(";", tabFilters.Select(f =>
+                    {
+                        var parts = new List<string> { f.Field ?? string.Empty, f.Operator ?? string.Empty };
+                        if (f.Operator != "null" && f.Operator != "notnull")
+                        {
+                            parts.Add(f.Value ?? string.Empty);
+                        }
+                        else
+                        {
+                            parts.Add("null");
+                        }
+                        return string.Join("|", parts);
+                    }));
+                }
+
+                relatedEntities.Add(new RelatedEntityConfig
+                {
+                    EntityName = relationship.ReferencingEntity,
+                    RelationshipName = relationship.SchemaName,
+                    LookupFieldName = relationship.ReferencingAttribute,
+                    UseRelationship = true,
+                    FilterCriteria = string.IsNullOrWhiteSpace(filterString) ? null : filterString,
+                    FieldMappings = mappings
+                });
+            }
+
+            if (!relatedEntities.Any())
+            {
+                MessageBox.Show("Add at least one field mapping in at least one child relationship before publishing.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+
+            var configName = relatedEntities.Count == 1
+                ? $"{parent.DisplayName} to {relatedEntities[0].EntityName}"
+                : $"{parent.DisplayName} to {relatedEntities.Count} child entities";
 
             var config = new CascadeConfigurationModel
             {
                 Id = Guid.NewGuid().ToString(),
-                Name = $"{parent.DisplayName} to {_selectedRelationship.DisplayName}",
+                Name = configName,
                 ParentEntity = parent.LogicalName,
-                RelatedEntities = new List<RelatedEntityConfig>
-                {
-                    new RelatedEntityConfig
-                    {
-                        EntityName = _selectedRelationship.ReferencingEntity,
-                        RelationshipName = _selectedRelationship.SchemaName,
-                        LookupFieldName = _selectedRelationship.ReferencingAttribute,
-                        UseRelationship = true,
-                        FieldMappings = mappings.Select(m => new FieldMapping
-                        {
-                            SourceField = m.SourceField!,
-                            TargetField = m.TargetField!,
-                            IsTriggerField = m.IsTriggerField
-                        }).ToList()
-                    }
-                },
-                EnableTracing = true,
+                RelatedEntities = relatedEntities,
+                EnableTracing = chkEnableTracing.Checked,
                 IsActive = true
             };
 
@@ -1647,8 +1880,8 @@ namespace CascadeFields.Configurator.Controls
                         MessageBox.Show($"Publish failed: {args.Error.Message}", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         return;
                     }
-                    AppendLog("Publish complete: step and pre-image upserted.");
-                    MessageBox.Show("Publish complete: step and pre-image upserted.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    AppendLog($"Publish complete: {relatedEntities.Count} child relationship(s) configured.");
+                    MessageBox.Show($"Publish complete: step and pre-image upserted for {relatedEntities.Count} child relationship(s).", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     txtJsonPreview.Text = args.Result as string ?? txtJsonPreview.Text;
                 }
             });
@@ -1846,6 +2079,152 @@ namespace CascadeFields.Configurator.Controls
             });
 
             await Task.CompletedTask;
+        }
+
+        #endregion
+
+        #region Child Relationship and Tab Management
+
+        private void AddChildRelationship()
+        {
+            if (cmbParentEntity.SelectedItem is not EntityItem parent)
+            {
+                MessageBox.Show("Please select a parent entity first.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (cmbChildEntity.SelectedItem is not RelationshipItem relationship)
+            {
+                MessageBox.Show("Please select a child entity relationship to add.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // Check if this relationship already has a tab
+            var tabKey = relationship.SchemaName;
+            if (_childEntityTabs.ContainsKey(tabKey))
+            {
+                MessageBox.Show($"The relationship '{relationship.DisplayName}' is already added.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                tabControlRightUpper.SelectedTab = _childEntityTabs[tabKey];
+                return;
+            }
+
+            // Set as selected relationship and create tab
+            _selectedRelationship = relationship;
+            EnsureChildEntityTab(relationship);
+            RefreshAttributeLists();
+            RefreshDestinationFieldDropdownsForAllTabs();
+            RefreshFilterFieldDropdowns();
+            LoadCurrentTabFilters();  // Load any saved filters for this tab
+            UpdateJsonPreview();
+
+            AppendLog($"Added child relationship: {relationship.DisplayName}");
+        }
+
+        private void TabControlRightUpper_Selected(object? sender, TabControlEventArgs e)
+        {
+            if (e.TabPage == null) return;
+
+            // Save current tab's filters before switching
+            SaveCurrentTabFilters();
+
+            // Load the new tab's filters
+            LoadTabFilters(e.TabPage);
+
+            UpdateJsonPreview();
+        }
+
+        private void TabControlRightUpper_MouseDown(object? sender, MouseEventArgs e)
+        {
+            // Handle middle-click or right-click to close tab
+            if (e.Button != MouseButtons.Middle && e.Button != MouseButtons.Right)
+                return;
+
+            for (int i = 0; i < tabControlRightUpper.TabCount; i++)
+            {
+                var tabRect = tabControlRightUpper.GetTabRect(i);
+                if (tabRect.Contains(e.Location))
+                {
+                    var tab = tabControlRightUpper.TabPages[i];
+                    
+                    if (e.Button == MouseButtons.Right)
+                    {
+                        // Show context menu for right-click
+                        var contextMenu = new ContextMenuStrip();
+                        contextMenu.Items.Add("Close Tab", null, (s, args) => RemoveChildTab(tab));
+                        contextMenu.Show(tabControlRightUpper, e.Location);
+                    }
+                    else if (e.Button == MouseButtons.Middle)
+                    {
+                        // Middle-click closes directly
+                        RemoveChildTab(tab);
+                    }
+                    break;
+                }
+            }
+        }
+
+        private void RemoveChildTab(TabPage tab)
+        {
+            if (_childEntityTabs.Count <= 1)
+            {
+                MessageBox.Show("You must have at least one child relationship configured.", "CascadeFields Configurator", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var confirm = MessageBox.Show($"Remove the child relationship '{tab.Text}'?", "Confirm Remove", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            if (confirm != DialogResult.Yes)
+                return;
+
+            // Find and remove from all dictionaries
+            var tabKey = _childEntityTabs.FirstOrDefault(kvp => kvp.Value == tab).Key;
+            if (tabKey != null)
+            {
+                _childEntityTabs.Remove(tabKey);
+                _childRelationships.Remove(tabKey);
+                _additionalChildMappings.Remove(tabKey);
+                _filterCriteriaPerTab.Remove(tabKey);
+            }
+
+            tabControlRightUpper.TabPages.Remove(tab);
+            tab.Dispose();
+
+            UpdateJsonPreview();
+            AppendLog($"Removed child relationship: {tab.Text}");
+        }
+
+        private void SaveCurrentTabFilters()
+        {
+            if (tabControlRightUpper.SelectedTab == null) return;
+
+            var tabKey = _childEntityTabs.FirstOrDefault(kvp => kvp.Value == tabControlRightUpper.SelectedTab).Key;
+            if (tabKey != null)
+            {
+                var filters = filterControl.GetFilters();
+                _filterCriteriaPerTab[tabKey] = filters;
+            }
+
+            UpdateJsonPreview();
+        }
+
+        private void LoadCurrentTabFilters()
+        {
+            if (tabControlRightUpper.SelectedTab != null)
+            {
+                LoadTabFilters(tabControlRightUpper.SelectedTab);
+            }
+        }
+
+        private void LoadTabFilters(TabPage tab)
+        {
+            var tabKey = _childEntityTabs.FirstOrDefault(kvp => kvp.Value == tab).Key;
+            if (tabKey != null && _filterCriteriaPerTab.TryGetValue(tabKey, out var filters))
+            {
+                filterControl.LoadFilters(filters);
+            }
+            else
+            {
+                filterControl.ClearFilters();
+            }
         }
 
         #endregion

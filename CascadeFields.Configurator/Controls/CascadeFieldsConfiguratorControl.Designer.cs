@@ -181,7 +181,7 @@ namespace CascadeFields.Configurator.Controls
             };
             fixedLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35F));
             fixedLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65F));
-            fixedLayout.RowCount = 4;
+            fixedLayout.RowCount = 5;  // Changed from 4 to 5
             fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
             fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
             fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
