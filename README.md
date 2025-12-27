@@ -90,7 +90,7 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 - Attribute metadata is cached per attribute to avoid repeated metadata calls; if metadata is unavailable, the raw value is used and a warning is logged.
 - If the resulting text exceeds the target field's max length, the plugin truncates to one character less than the limit and appends an ellipsis (…). A warning is logged when truncation occurs.
 
-Filter criteria uses a simple pipe-delimited format:
+### Filter criteria uses a simple pipe-delimited format:
 
 ``` text
 field|operator|value;field2|operator2|value2
