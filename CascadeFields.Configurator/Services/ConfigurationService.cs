@@ -4,15 +4,17 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CascadeFields.Configurator.Models;
+using CascadeFields.Configurator.Models.UI;
+using CascadeFields.Configurator.Models.Domain;
 using CascadeFields.Plugin.Models;
-using CascadeConfigurationModel = CascadeFields.Plugin.Models.CascadeConfiguration;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
 using Newtonsoft.Json;
+using PluginCascadeConfiguration = CascadeFields.Plugin.Models.CascadeConfiguration;
 
 namespace CascadeFields.Configurator.Services
 {
-    internal class ConfigurationService
+    public class ConfigurationService : IConfigurationService
     {
         private readonly IOrganizationService _service;
 
@@ -50,7 +52,7 @@ namespace CascadeFields.Configurator.Services
 
                     try
                     {
-                        var config = JsonConvert.DeserializeObject<CascadeConfigurationModel>(rawConfig);
+                        var config = JsonConvert.DeserializeObject<PluginCascadeConfiguration>(rawConfig);
                         if (config?.RelatedEntities == null)
                         {
                             continue;
@@ -85,6 +87,17 @@ namespace CascadeFields.Configurator.Services
                     .OrderBy(c => c.ParentEntity)
                     .ThenBy(c => c.ChildEntity)
                     .ToList();
+            });
+        }
+
+        public Task<string?> GetConfigurationForParentEntityAsync(string parentEntityLogicalName)
+        {
+            return Task.Run(async () =>
+            {
+                var configurations = await GetExistingConfigurationsAsync();
+                var config = configurations.FirstOrDefault(c => 
+                    c.ParentEntity == parentEntityLogicalName);
+                return config?.RawJson;
             });
         }
 

@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Windows.Forms;
 using CascadeFields.Configurator.Models;
+using CascadeFields.Configurator.Models.UI;
 
 namespace CascadeFields.Configurator.Controls
 {
@@ -333,6 +334,7 @@ namespace CascadeFields.Configurator.Controls
             }
         }
 
+        /*
         public void LoadFilters(List<SavedFilterCriteria>? filters)
         {
             _filterRows.Clear();
@@ -380,6 +382,7 @@ namespace CascadeFields.Configurator.Controls
             // Force the grid to refresh its display to show the operator values
             gridFilters.Refresh();
         }
+        */
 
         public List<SavedFilterCriteria> GetFilters()
         {

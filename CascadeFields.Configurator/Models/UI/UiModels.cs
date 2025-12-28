@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using Microsoft.Xrm.Sdk.Metadata;
 using CascadeConfigurationModel = CascadeFields.Plugin.Models.CascadeConfiguration;
 
-namespace CascadeFields.Configurator.Models
+namespace CascadeFields.Configurator.Models.UI
 {
     public class SolutionItem
     {
@@ -96,7 +96,7 @@ namespace CascadeFields.Configurator.Models
         };
     }
 
-    internal class ConfiguredRelationship
+    public class ConfiguredRelationship
     {
         public string ParentEntity { get; set; } = string.Empty;
         public string ChildEntity { get; set; } = string.Empty;

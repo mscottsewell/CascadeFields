@@ -11,6 +11,7 @@ namespace CascadeFields.Configurator.Controls
         private FlowLayoutPanel ribbonPanel;
         private Button btnLoadMetadata;
         private Button btnAddChildRelationship;
+        private Button btnRemoveRelationship;
         private Button btnRetrieveConfigured;
         private Button btnUpdatePlugin;
         private Button btnPublish;
@@ -37,6 +38,8 @@ namespace CascadeFields.Configurator.Controls
         private DataGridViewButtonColumn colDelete;
         private FilterCriteriaControl filterControl;
         private CheckBox chkEnableTracing;
+        private CheckBox chkIsActive;
+        private Label lblStatus;
 
         /// <summary>
         ///  Clean up any resources being used.
@@ -58,6 +61,7 @@ namespace CascadeFields.Configurator.Controls
             ribbonPanel = new FlowLayoutPanel();
             btnLoadMetadata = new Button();
             btnAddChildRelationship = new Button();
+            btnRemoveRelationship = new Button();
             btnRetrieveConfigured = new Button();
             btnUpdatePlugin = new Button();
             btnPublish = new Button();
@@ -79,6 +83,8 @@ namespace CascadeFields.Configurator.Controls
             panelRightLower = new Panel();
             filterControl = new FilterCriteriaControl();
             chkEnableTracing = new CheckBox();
+            chkIsActive = new CheckBox();
+            lblStatus = new Label();
             gridMappings = new DataGridView();
             colSourceField = new DataGridViewComboBoxColumn();
             colTargetField = new DataGridViewComboBoxColumn();
@@ -117,6 +123,7 @@ namespace CascadeFields.Configurator.Controls
             {
                 btnLoadMetadata,
                 btnAddChildRelationship,
+                btnRemoveRelationship,
                 btnRetrieveConfigured,
                 btnUpdatePlugin,
                 btnPublish,
@@ -136,6 +143,13 @@ namespace CascadeFields.Configurator.Controls
             btnAddChildRelationship.Text = "Add Child Relationship";
             btnAddChildRelationship.AutoSize = true;
             btnAddChildRelationship.Margin = new Padding(4);
+            // 
+            // btnRemoveRelationship
+            // 
+            btnRemoveRelationship.FlatStyle = FlatStyle.Flat;
+            btnRemoveRelationship.Text = "Remove Relationship";
+            btnRemoveRelationship.AutoSize = true;
+            btnRemoveRelationship.Margin = new Padding(4);
             // 
             // btnRetrieveConfigured
             // 
@@ -269,7 +283,6 @@ namespace CascadeFields.Configurator.Controls
             tabControlRightUpper.DrawMode = TabDrawMode.OwnerDrawFixed;
             tabControlRightUpper.SizeMode = TabSizeMode.Fixed;
             tabControlRightUpper.ItemSize = new Size(180, 40);
-            tabControlRightUpper.DrawItem += tabControlRightUpper_DrawItem;
             // Child entity tabs will be added dynamically
 
             // 
@@ -277,8 +290,29 @@ namespace CascadeFields.Configurator.Controls
             // 
             panelRightLower.Dock = DockStyle.Fill;
             panelRightLower.Padding = new Padding(8);
+            panelRightLower.Controls.Add(lblStatus);
             panelRightLower.Controls.Add(filterControl);
+            panelRightLower.Controls.Add(chkIsActive);
             panelRightLower.Controls.Add(chkEnableTracing);
+
+            // 
+            // lblStatus
+            // 
+            lblStatus.Dock = DockStyle.Bottom;
+            lblStatus.Text = "Ready";
+            lblStatus.AutoSize = true;
+            lblStatus.Height = 20;
+            lblStatus.Padding = new Padding(4);
+            lblStatus.BorderStyle = BorderStyle.FixedSingle;
+
+            // 
+            // chkIsActive
+            // 
+            chkIsActive.Dock = DockStyle.Bottom;
+            chkIsActive.Text = "Is Active";
+            chkIsActive.Checked = true;
+            chkIsActive.Height = 25;
+            chkIsActive.Padding = new Padding(4);
 
             // 
             // chkEnableTracing

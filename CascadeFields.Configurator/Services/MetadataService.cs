@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using CascadeFields.Configurator.Models;
+using CascadeFields.Configurator.Models.UI;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
@@ -12,7 +13,7 @@ using Microsoft.Xrm.Sdk.Query;
 
 namespace CascadeFields.Configurator.Services
 {
-    internal class MetadataService
+    public class MetadataService : IMetadataService
     {
         private readonly IOrganizationService _service;
 
@@ -171,7 +172,7 @@ namespace CascadeFields.Configurator.Services
             });
         }
 
-        public Task<EntityMetadata?> GetEntityMetadataAsync(string logicalName)
+        public Task<EntityMetadata> GetEntityMetadataAsync(string logicalName)
         {
             if (string.IsNullOrWhiteSpace(logicalName))
             {
@@ -188,7 +189,36 @@ namespace CascadeFields.Configurator.Services
                 };
 
                 var response = (RetrieveEntityResponse)_service.Execute(request);
-                return response?.EntityMetadata;
+                return response!.EntityMetadata;
+            });
+        }
+
+        public Task<List<AttributeItem>> GetAttributesAsync(string entityLogicalName)
+        {
+            return Task.Run(async () =>
+            {
+                var metadata = await GetEntityMetadataAsync(entityLogicalName);
+                if (metadata == null)
+                    return new List<AttributeItem>();
+
+                return GetAttributeItems(metadata).ToList();
+            });
+        }
+
+        public Task<List<RelationshipItem>> GetChildRelationshipsAsync(string parentEntityLogicalName)
+        {
+            return Task.Run(async () =>
+            {
+                var metadata = await GetEntityMetadataAsync(parentEntityLogicalName);
+                if (metadata == null)
+                    return new List<RelationshipItem>();
+
+                // Get all entities for relationship resolution
+                var allEntities = (await GetSolutionEntitiesAsync("Active")).ToList();
+                if (allEntities.Count == 0)
+                    return new List<RelationshipItem>();
+
+                return GetChildRelationships(metadata, allEntities).ToList();
             });
         }
 
