@@ -88,7 +88,7 @@ namespace CascadeFields.Configurator.Services
             });
         }
 
-        public Task PublishConfigurationAsync(CascadeConfigurationModel configuration, IProgress<string> progress, CancellationToken cancellationToken)
+        public Task PublishConfigurationAsync(CascadeConfigurationModel configuration, IProgress<string> progress, CancellationToken cancellationToken, Guid? solutionId = null)
         {
             return Task.Run(() =>
             {
@@ -123,7 +123,14 @@ namespace CascadeFields.Configurator.Services
                 var stepId = UpsertProcessingStep(configuration, pluginType, updateMessageId, filterId, progress);
 
                 // Ensure preimage
-                UpsertPreImage(stepId, configuration, progress);
+                var preImageId = UpsertPreImage(stepId, configuration, progress);
+
+                // Add components to solution if specified
+                if (solutionId.HasValue && solutionId != Guid.Empty)
+                {
+                    progress.Report("Adding components to solution...");
+                    AddComponentsToSolution(pluginType, stepId, preImageId, solutionId.Value, progress);
+                }
 
                 progress.Report("Publish complete: step and preimage upserted.");
             }, cancellationToken);
@@ -300,7 +307,7 @@ namespace CascadeFields.Configurator.Services
             return id;
         }
 
-        private void UpsertPreImage(Guid stepId, CascadeConfigurationModel config, IProgress<string> progress)
+        private Guid UpsertPreImage(Guid stepId, CascadeConfigurationModel config, IProgress<string> progress)
         {
             var query = new QueryExpression("sdkmessageprocessingstepimage")
             {
@@ -321,7 +328,11 @@ namespace CascadeFields.Configurator.Services
             var attributesString = string.Join(",", sourceFields);
 
             var image = new Entity("sdkmessageprocessingstepimage");
-            if (existing != null) image.Id = existing.Id;
+            Guid id;
+            if (existing != null)
+            {
+                image.Id = existing.Id;
+            }
             image["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", stepId);
             image["name"] = "PreImage";
             image["entityalias"] = "PreImage";
@@ -331,14 +342,104 @@ namespace CascadeFields.Configurator.Services
 
             if (image.Id == Guid.Empty)
             {
-                _service.Create(image);
+                id = _service.Create(image);
                 progress.Report("Created pre-image.");
             }
             else
             {
                 _service.Update(image);
+                id = image.Id;
                 progress.Report("Updated pre-image.");
             }
+
+            return id;
+        }
+
+        private void AddComponentsToSolution(Entity pluginType, Guid stepId, Guid preImageId, Guid solutionId, IProgress<string> progress)
+        {
+            try
+            {
+                // Get the plugin assembly ID from the plugin type
+                var pluginAssemblyId = pluginType.GetAttributeValue<EntityReference>("pluginassemblyid")?.Id ?? Guid.Empty;
+                if (pluginAssemblyId == Guid.Empty)
+                {
+                    progress.Report("Warning: Could not find plugin assembly. Solution component might be incomplete.");
+                    return;
+                }
+
+                var componentsAdded = 0;
+
+                // Add plugin assembly component (Component Type = 91)
+                if (!ComponentExistsInSolution(solutionId, 91, pluginAssemblyId))
+                {
+                    AddSolutionComponent(solutionId, 91, pluginAssemblyId);
+                    componentsAdded++;
+                    progress.Report("Added plugin assembly to solution.");
+                }
+
+                // Add plugin type component (Component Type = 90)
+                if (!ComponentExistsInSolution(solutionId, 90, pluginType.Id))
+                {
+                    AddSolutionComponent(solutionId, 90, pluginType.Id);
+                    componentsAdded++;
+                    progress.Report("Added plugin type to solution.");
+                }
+
+                // Add processing step component (Component Type = 92)
+                if (!ComponentExistsInSolution(solutionId, 92, stepId))
+                {
+                    AddSolutionComponent(solutionId, 92, stepId);
+                    componentsAdded++;
+                    progress.Report("Added processing step to solution.");
+                }
+
+                // Add step image component (Component Type = 93)
+                if (!ComponentExistsInSolution(solutionId, 93, preImageId))
+                {
+                    AddSolutionComponent(solutionId, 93, preImageId);
+                    componentsAdded++;
+                    progress.Report("Added step image to solution.");
+                }
+
+                progress.Report($"Solution component assignment complete ({componentsAdded} components added).");
+            }
+            catch (Exception ex)
+            {
+                progress.Report($"Warning: Failed to add components to solution: {ex.Message}");
+            }
+        }
+
+        private bool ComponentExistsInSolution(Guid solutionId, int componentType, Guid componentId)
+        {
+            try
+            {
+                var query = new QueryExpression("solutioncomponent")
+                {
+                    ColumnSet = new ColumnSet("solutioncomponentid")
+                };
+                query.Criteria.AddCondition("solutionid", ConditionOperator.Equal, solutionId);
+                query.Criteria.AddCondition("componenttype", ConditionOperator.Equal, componentType);
+                query.Criteria.AddCondition("objectid", ConditionOperator.Equal, componentId);
+
+                var results = _service.RetrieveMultiple(query);
+                return results.Entities.Count > 0;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void AddSolutionComponent(Guid solutionId, int componentType, Guid componentId)
+        {
+            var component = new Entity("solutioncomponent")
+            {
+                ["solutionid"] = new EntityReference("solution", solutionId),
+                ["componenttype"] = new OptionSetValue(componentType),
+                ["objectid"] = componentId
+            };
+
+            _service.Create(component);
         }
     }
 }

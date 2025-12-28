@@ -33,11 +33,12 @@ namespace CascadeFields.Configurator.Controls
 
             gridFilters.DataSource = _filterRows;
             
-            // Initialize operator column properties (but NOT DataSource - we'll populate per-cell)
+            // Initialize operator column with data source at column level
+            colOperator.DataSource = _operators;
             colOperator.DisplayMember = nameof(FilterOperator.Display);
             colOperator.ValueMember = nameof(FilterOperator.Code);
-            // Note: Don't set DataSource here - we populate individual cells in InitializeOperatorDropdown
             
+            gridFilters.CellFormatting += GridFilters_CellFormatting;
             gridFilters.CellValueChanged += GridFilters_CellValueChanged;
             gridFilters.CellEndEdit += (s, e) => 
             {
@@ -71,11 +72,12 @@ namespace CascadeFields.Configurator.Controls
             gridFilters.UserDeletedRow += (s, e) => OnFilterChanged();
             gridFilters.RowsAdded += (s, e) =>
             {
-                // Initialize dropdowns for new rows
+                // Initialize dropdowns and value cell states for new rows
                 for (int i = e.RowIndex; i < e.RowIndex + e.RowCount && i < gridFilters.Rows.Count; i++)
                 {
                     InitializeFieldDropdown(i);
                     InitializeOperatorDropdown(i);
+                    InitializeValueCellState(i);
                 }
             };
 
@@ -93,6 +95,12 @@ namespace CascadeFields.Configurator.Controls
             {
                 InitializeOperatorDropdown(i);
             }
+        }
+
+        private void GridFilters_CellFormatting(object? sender, DataGridViewCellFormattingEventArgs e)
+        {
+            // CellFormatting is kept for any future custom formatting needs
+            // Operator column now uses column-level DataSource, so no special handling needed
         }
 
         private void GridFilters_EditingControlShowing(object? sender, DataGridViewEditingControlShowingEventArgs e)
@@ -130,8 +138,29 @@ namespace CascadeFields.Configurator.Controls
 
         private void GridFilters_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
         {
-            // Don't do anything here - CellValueChanged fires during editing
-            // We'll raise FilterChanged only when the edit is committed (user leaves the cell)
+            // Handle operator change - clear/disable value for null operators
+            if (e.RowIndex >= 0 && e.ColumnIndex == colOperator.Index)
+            {
+                var row = gridFilters.Rows[e.RowIndex];
+                var operatorCell = row.Cells[colOperator.Index];
+                var valueCell = row.Cells[colValue.Index];
+                
+                string? operatorCode = operatorCell.Value as string;
+                bool isNullOperator = operatorCode == "null" || operatorCode == "notnull";
+                
+                // Clear and disable value cell if using null operator
+                if (isNullOperator)
+                {
+                    valueCell.Value = null;
+                    valueCell.ReadOnly = true;
+                    valueCell.Style.BackColor = System.Drawing.Color.LightGray;
+                }
+                else
+                {
+                    valueCell.ReadOnly = false;
+                    valueCell.Style.BackColor = System.Drawing.Color.White;
+                }
+            }
         }
 
         private void GridFilters_CellContentClick(object? sender, DataGridViewCellEventArgs e)
@@ -207,28 +236,47 @@ namespace CascadeFields.Configurator.Controls
         {
             if (_isUpdating) return;
             
-            if (rowIndex >= 0 && rowIndex < gridFilters.Rows.Count)
+            if (rowIndex >= 0 && rowIndex < gridFilters.Rows.Count && rowIndex < _filterRows.Count)
             {
                 var cell = gridFilters.Rows[rowIndex].Cells[colOperator.Index] as DataGridViewComboBoxCell;
                 if (cell != null)
                 {
-                    var currentValue = cell.Value as string;
-                    cell.Items.Clear();
+                    // Get the current value from the bound FilterRow data
+                    var currentValue = _filterRows[rowIndex].Operator;
 
-                    foreach (var op in _operators)
-                    {
-                        cell.Items.Add(op);
-                    }
-
-                    cell.DisplayMember = nameof(FilterOperator.Display);
-                    cell.ValueMember = nameof(FilterOperator.Code);
-
-                    // Restore previous value if still valid
-                    if (!string.IsNullOrWhiteSpace(currentValue) &&
-                        _operators.Any(o => o.Code == currentValue))
+                    // Since column DataSource is set, just ensure the value is set correctly
+                    if (!string.IsNullOrWhiteSpace(currentValue))
                     {
                         cell.Value = currentValue;
+                        // Force the cell to refresh its display
+                        gridFilters.InvalidateCell(cell);
                     }
+                }
+            }
+        }
+
+        private void InitializeValueCellState(int rowIndex)
+        {
+            if (rowIndex >= 0 && rowIndex < gridFilters.Rows.Count)
+            {
+                var row = gridFilters.Rows[rowIndex];
+                var operatorCell = row.Cells[colOperator.Index];
+                var valueCell = row.Cells[colValue.Index];
+                
+                string? operatorCode = operatorCell.Value as string;
+                bool isNullOperator = operatorCode == "null" || operatorCode == "notnull";
+                
+                // Disable and clear value cell if using null operator
+                if (isNullOperator)
+                {
+                    valueCell.Value = null;
+                    valueCell.ReadOnly = true;
+                    valueCell.Style.BackColor = System.Drawing.Color.LightGray;
+                }
+                else
+                {
+                    valueCell.ReadOnly = false;
+                    valueCell.Style.BackColor = System.Drawing.Color.White;
                 }
             }
         }
@@ -277,10 +325,11 @@ namespace CascadeFields.Configurator.Controls
             _filterRows.Clear();
             _filterRows.Add(new FilterRow());
             
-            // Ensure operator dropdown is initialized for the new blank row
+            // Ensure operator dropdown and value cell state are initialized for the new blank row
             if (gridFilters.Rows.Count > 0)
             {
                 InitializeOperatorDropdown(0);
+                InitializeValueCellState(0);
             }
         }
 
@@ -306,6 +355,30 @@ namespace CascadeFields.Configurator.Controls
             {
                 _filterRows.Add(new FilterRow());
             }
+
+            // Defer initialization until after the grid has processed the data binding
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => InitializeLoadedFilters()));
+            }
+            else
+            {
+                InitializeLoadedFilters();
+            }
+        }
+
+        private void InitializeLoadedFilters()
+        {
+            // Initialize dropdowns and value cell states for all loaded rows
+            for (int i = 0; i < gridFilters.Rows.Count; i++)
+            {
+                InitializeFieldDropdown(i);
+                InitializeOperatorDropdown(i);
+                InitializeValueCellState(i);
+            }
+            
+            // Force the grid to refresh its display to show the operator values
+            gridFilters.Refresh();
         }
 
         public List<SavedFilterCriteria> GetFilters()
@@ -373,6 +446,12 @@ namespace CascadeFields.Configurator.Controls
             if (_filterRows.Count == 0)
             {
                 _filterRows.Add(new FilterRow());
+            }
+
+            // Initialize value cell states for all loaded rows
+            for (int i = 0; i < gridFilters.Rows.Count; i++)
+            {
+                InitializeValueCellState(i);
             }
         }
 

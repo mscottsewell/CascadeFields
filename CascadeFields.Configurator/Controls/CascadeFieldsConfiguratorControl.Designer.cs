@@ -10,6 +10,7 @@ namespace CascadeFields.Configurator.Controls
         private IContainer components = null!;
         private FlowLayoutPanel ribbonPanel;
         private Button btnLoadMetadata;
+        private Button btnAddChildRelationship;
         private Button btnRetrieveConfigured;
         private Button btnUpdatePlugin;
         private Button btnPublish;
@@ -27,10 +28,6 @@ namespace CascadeFields.Configurator.Controls
         private ComboBox cmbSolution;
         private Label lblParentEntity;
         private ComboBox cmbParentEntity;
-        private Label lblParentForm;
-        private ComboBox cmbParentForm;
-        private Label lblChildEntity;
-        private ComboBox cmbChildEntity;
         private TextBox txtLog;
         private TextBox txtJsonPreview;
         private DataGridView gridMappings;
@@ -60,6 +57,7 @@ namespace CascadeFields.Configurator.Controls
             components = new Container();
             ribbonPanel = new FlowLayoutPanel();
             btnLoadMetadata = new Button();
+            btnAddChildRelationship = new Button();
             btnRetrieveConfigured = new Button();
             btnUpdatePlugin = new Button();
             btnPublish = new Button();
@@ -71,10 +69,6 @@ namespace CascadeFields.Configurator.Controls
             cmbSolution = new ComboBox();
             lblParentEntity = new Label();
             cmbParentEntity = new ComboBox();
-            lblParentForm = new Label();
-            cmbParentForm = new ComboBox();
-            lblChildEntity = new Label();
-            cmbChildEntity = new ComboBox();
             tabControlLeftLower = new TabControl();
             tabLog = new TabPage();
             txtLog = new TextBox();
@@ -122,6 +116,7 @@ namespace CascadeFields.Configurator.Controls
             ribbonPanel.Controls.AddRange(new Control[]
             {
                 btnLoadMetadata,
+                btnAddChildRelationship,
                 btnRetrieveConfigured,
                 btnUpdatePlugin,
                 btnPublish,
@@ -134,6 +129,13 @@ namespace CascadeFields.Configurator.Controls
             btnLoadMetadata.Text = "Load Metadata";
             btnLoadMetadata.AutoSize = true;
             btnLoadMetadata.Margin = new Padding(4);
+            // 
+            // btnAddChildRelationship
+            // 
+            btnAddChildRelationship.FlatStyle = FlatStyle.Flat;
+            btnAddChildRelationship.Text = "Add Child Relationship";
+            btnAddChildRelationship.AutoSize = true;
+            btnAddChildRelationship.Margin = new Padding(4);
             // 
             // btnRetrieveConfigured
             // 
@@ -181,19 +183,13 @@ namespace CascadeFields.Configurator.Controls
             };
             fixedLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35F));
             fixedLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65F));
-            fixedLayout.RowCount = 5;  // Changed from 4 to 5
-            fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
-            fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
+            fixedLayout.RowCount = 2;  // Solution + Parent Entity
             fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
             fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
             fixedLayout.Controls.Add(lblSolution, 0, 0);
             fixedLayout.Controls.Add(cmbSolution, 1, 0);
             fixedLayout.Controls.Add(lblParentEntity, 0, 1);
             fixedLayout.Controls.Add(cmbParentEntity, 1, 1);
-            fixedLayout.Controls.Add(lblParentForm, 0, 2);
-            fixedLayout.Controls.Add(cmbParentForm, 1, 2);
-            fixedLayout.Controls.Add(lblChildEntity, 0, 3);
-            fixedLayout.Controls.Add(cmbChildEntity, 1, 3);
             
             // Add tab control directly below the fixed header (no splitter needed for left side)
             tabControlLeftLower.Dock = DockStyle.Fill;
@@ -224,22 +220,6 @@ namespace CascadeFields.Configurator.Controls
 
             cmbParentEntity.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             cmbParentEntity.DropDownStyle = ComboBoxStyle.DropDownList;
-
-            lblParentForm.Text = "Parent Form (optional)";
-            lblParentForm.Anchor = AnchorStyles.Left;
-            lblParentForm.AutoSize = true;
-            lblParentForm.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
-
-            cmbParentForm.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-            cmbParentForm.DropDownStyle = ComboBoxStyle.DropDownList;
-
-            lblChildEntity.Text = "Child Entity";
-            lblChildEntity.Anchor = AnchorStyles.Left;
-            lblChildEntity.AutoSize = true;
-            lblChildEntity.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
-
-            cmbChildEntity.Anchor = AnchorStyles.Left | AnchorStyles.Right;
-            cmbChildEntity.DropDownStyle = ComboBoxStyle.DropDownList;
 
             // 
             // tabControlLeftLower
@@ -286,6 +266,10 @@ namespace CascadeFields.Configurator.Controls
             // tabControlRightUpper
             // 
             tabControlRightUpper.Dock = DockStyle.Fill;
+            tabControlRightUpper.DrawMode = TabDrawMode.OwnerDrawFixed;
+            tabControlRightUpper.SizeMode = TabSizeMode.Fixed;
+            tabControlRightUpper.ItemSize = new Size(180, 40);
+            tabControlRightUpper.DrawItem += tabControlRightUpper_DrawItem;
             // Child entity tabs will be added dynamically
 
             // 

@@ -97,8 +97,13 @@ namespace CascadeFields.Configurator.Services
                     .Select(e => e.GetAttributeValue<Guid>("objectid"))
                     .Where(id => id != Guid.Empty));
 
-                // Retrieve ALL entities in one batch request (no filter), then filter in memory
-                // This is much faster than individual requests
+                if (entityIds.Count == 0)
+                {
+                    return new List<EntityMetadata>();
+                }
+
+                // OPTIMIZED: Use EntityFilters and MetadataConditions to only retrieve entities in this solution
+                // This is MUCH faster than retrieving all entities and filtering in memory
                 var entityProperties = new MetadataPropertiesExpression
                 {
                     AllProperties = false
@@ -109,20 +114,45 @@ namespace CascadeFields.Configurator.Services
                     "IsIntersect", "IsCustomizable", "Attributes", "OneToManyRelationships", "ManyToOneRelationships"
                 });
 
+                // Only request attributes that are needed: valid for update, not logical
+                var attributeProperties = new MetadataPropertiesExpression
+                {
+                    AllProperties = false
+                };
+                attributeProperties.PropertyNames.AddRange(new[]
+                {
+                    "LogicalName", "DisplayName", "AttributeType", "IsValidForUpdate", "IsLogical", 
+                    "AttributeTypeName", "IsValidForCreate", "RequiredLevel"
+                });
+
+                // Only request essential relationship properties - not all properties
+                var relationshipProperties = new MetadataPropertiesExpression
+                {
+                    AllProperties = false
+                };
+                relationshipProperties.PropertyNames.AddRange(new[]
+                {
+                    "SchemaName", "ReferencedEntity", "ReferencedAttribute", "ReferencingEntity", 
+                    "ReferencingAttribute", "RelationshipType"
+                });
+
+                // Build criteria to filter only entities in this solution
+                var entityFilter = new MetadataFilterExpression(LogicalOperator.And);
+                entityFilter.Conditions.Add(new MetadataConditionExpression("MetadataId", MetadataConditionOperator.In, entityIds.ToArray()));
+                entityFilter.Conditions.Add(new MetadataConditionExpression("IsIntersect", MetadataConditionOperator.Equals, false));
+                entityFilter.Conditions.Add(new MetadataConditionExpression("IsCustomizable", MetadataConditionOperator.Equals, true));
+
                 var entityQueryExpression = new EntityQueryExpression
                 {
+                    Criteria = entityFilter,
                     Properties = entityProperties,
                     AttributeQuery = new AttributeQueryExpression
                     {
-                        Properties = new MetadataPropertiesExpression
-                        {
-                            AllProperties = false,
-                            PropertyNames = { "LogicalName", "DisplayName", "AttributeType", "IsValidForUpdate", "IsLogical" }
-                        }
+                        Properties = attributeProperties
                     },
                     RelationshipQuery = new RelationshipQueryExpression
                     {
-                        Properties = new MetadataPropertiesExpression { AllProperties = true }
+                        Properties = relationshipProperties
                     }
                 };
 
@@ -134,11 +164,8 @@ namespace CascadeFields.Configurator.Services
 
                 var metadataResponse = (RetrieveMetadataChangesResponse)_service.Execute(retrieveMetadataChangesRequest);
                 
-                // Filter to only entities in this solution, excluding intersection and non-customizable entities
-                var entities = metadataResponse.EntityMetadata
-                    .Where(e => entityIds.Contains(e.MetadataId.GetValueOrDefault()))
-                    .Where(e => e.IsIntersect != true && e.IsCustomizable?.Value != false)
-                    .ToList();
+                // Entities are already filtered by the query - no need for additional filtering
+                var entities = metadataResponse.EntityMetadata.ToList();
 
                 return entities;
             });
@@ -162,32 +189,6 @@ namespace CascadeFields.Configurator.Services
 
                 var response = (RetrieveEntityResponse)_service.Execute(request);
                 return response?.EntityMetadata;
-            });
-        }
-
-        public Task<List<FormItem>> GetMainFormsAsync(string entityLogicalName)
-        {
-            return Task.Run(() =>
-            {
-                var query = new QueryExpression("systemform")
-                {
-                    ColumnSet = new ColumnSet("formid", "name", "formxml"),
-                    Criteria = new FilterExpression(LogicalOperator.And),
-                    Orders = { new OrderExpression("name", OrderType.Ascending) }
-                };
-
-                query.Criteria.AddCondition("type", ConditionOperator.Equal, 2); // Main
-                query.Criteria.AddCondition("objecttypecode", ConditionOperator.Equal, entityLogicalName);
-
-                var response = _service.RetrieveMultiple(query);
-                return response.Entities
-                    .Select(e => new FormItem
-                    {
-                        Id = e.Id,
-                        Name = e.GetAttributeValue<string>("name") ?? "Unnamed form",
-                        FormXml = e.GetAttributeValue<string>("formxml") ?? string.Empty
-                    })
-                    .ToList();
             });
         }
 
@@ -259,12 +260,29 @@ namespace CascadeFields.Configurator.Services
                     var childDisplayName = x.Child!.DisplayName?.UserLocalizedLabel?.Label
                                          ?? x.Relationship.ReferencingEntity
                                          ?? string.Empty;
+                    
+                    // Get lookup field display name
+                    var lookupFieldDisplayName = string.Empty;
+                    if (x.Child?.Attributes != null)
+                    {
+                        var lookupAttr = x.Child.Attributes.FirstOrDefault(a => 
+                            string.Equals(a.LogicalName, x.Relationship.ReferencingAttribute, StringComparison.OrdinalIgnoreCase));
+                        if (lookupAttr != null)
+                        {
+                            lookupFieldDisplayName = lookupAttr.DisplayName?.UserLocalizedLabel?.Label 
+                                                  ?? x.Relationship.ReferencingAttribute 
+                                                  ?? string.Empty;
+                        }
+                    }
+                    
                     return new RelationshipItem
                     {
                         SchemaName = x.Relationship.SchemaName,
                         ReferencingEntity = x.Relationship.ReferencingEntity ?? string.Empty,
                         ReferencingAttribute = x.Relationship.ReferencingAttribute ?? string.Empty,
-                        DisplayName = childDisplayName
+                        DisplayName = childDisplayName,
+                        ChildEntityDisplayName = childDisplayName,
+                        LookupFieldDisplayName = lookupFieldDisplayName
                     };
                 })
                 .OrderBy(r => r.DisplayName)

@@ -5,7 +5,7 @@ using CascadeConfigurationModel = CascadeFields.Plugin.Models.CascadeConfigurati
 
 namespace CascadeFields.Configurator.Models
 {
-    internal class SolutionItem
+    public class SolutionItem
     {
         public Guid Id { get; set; }
         public string UniqueName { get; set; } = string.Empty;
@@ -14,7 +14,7 @@ namespace CascadeFields.Configurator.Models
         public override string ToString() => FriendlyName;
     }
 
-    internal class EntityItem
+    public class EntityItem
     {
         public string LogicalName { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
@@ -25,12 +25,16 @@ namespace CascadeFields.Configurator.Models
             : $"{DisplayName} ({LogicalName})";
     }
 
-    internal class RelationshipItem
+    public class RelationshipItem
     {
         public string SchemaName { get; set; } = string.Empty;
         public string ReferencingEntity { get; set; } = string.Empty;
         public string ReferencingAttribute { get; set; } = string.Empty;
         public string DisplayName { get; set; } = string.Empty;
+        
+        // Display names for formatting
+        public string ChildEntityDisplayName { get; set; } = string.Empty;
+        public string LookupFieldDisplayName { get; set; } = string.Empty;
         
         // Property for ComboBox DisplayMember
         public string DisplayText => string.IsNullOrWhiteSpace(DisplayName)
@@ -38,15 +42,6 @@ namespace CascadeFields.Configurator.Models
             : $"{DisplayName} ({ReferencingAttribute})";
 
         public override string ToString() => DisplayText;
-    }
-
-    internal class FormItem
-    {
-        public Guid Id { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public string FormXml { get; set; } = string.Empty;
-
-        public override string ToString() => Name;
     }
 
     public class AttributeItem

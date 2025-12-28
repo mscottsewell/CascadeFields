@@ -27,21 +27,10 @@ namespace CascadeFields.Configurator.Models
         public string ConnectionKey { get; set; } = string.Empty;
         public string? SolutionUniqueName { get; set; }
         public Guid? SolutionId { get; set; }
-        public string? ParentEntity { get; set; }
-        public Guid? ParentFormId { get; set; }
-        public string? ChildEntity { get; set; }
-        public List<SavedFieldMapping>? FieldMappings { get; set; }
-        public List<SavedFilterCriteria>? FilterCriteria { get; set; }
-        public bool EnableTracing { get; set; } = true;
+        public string? ConfigurationJson { get; set; }
     }
 
-    public class SavedFieldMapping
-    {
-        public string? SourceField { get; set; }
-        public string? TargetField { get; set; }
-        public bool IsTriggerField { get; set; }
-    }
-
+    // Internal model for filter criteria - used within the control for UI binding
     public class SavedFilterCriteria
     {
         public string? Field { get; set; }
