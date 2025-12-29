@@ -150,29 +150,62 @@ namespace CascadeFields.Configurator.Services
                     throw new InvalidPluginExecutionException("CascadeFields plugin type not found. Use 'Update Cascade Fields Plug-in' first.");
                 }
 
-                // Ensure sdkmessage 'Update' and filter for entity
-                progress.Report("Resolving SDK message and filters...");
+                // Ensure sdkmessage 'Update' and filter for parent entity
+                progress.Report("Resolving SDK messages and filters...");
                 var updateMessageId = GetSdkMessageId("Update");
-                var filterId = GetSdkMessageFilterId(updateMessageId, configuration.ParentEntity);
+                var parentFilterId = GetSdkMessageFilterId(updateMessageId, configuration.ParentEntity);
 
-                // Create or update step
-                var stepId = UpsertProcessingStep(configuration, pluginType, updateMessageId, filterId, progress);
+                // Create or update parent step
+                var parentStepId = UpsertProcessingStep(configuration, pluginType, updateMessageId, parentFilterId, progress);
 
-                // Ensure preimage
-                var preImageId = UpsertPreImage(stepId, configuration, progress);
+                // Ensure parent preimage
+                var parentPreImageId = UpsertPreImage(parentStepId, configuration, progress);
 
-                // Add components to solution if specified
+                // Add parent components to solution if specified
                 if (solutionId.HasValue && solutionId != Guid.Empty)
                 {
-                    progress.Report("Adding components to solution...");
-                    AddComponentsToSolution(pluginType, stepId, preImageId, solutionId.Value, progress);
+                    progress.Report("Adding parent components to solution...");
+                    AddComponentsToSolution(pluginType, parentStepId, parentPreImageId, solutionId.Value, progress);
                 }
 
-                progress.Report("Publish complete: step and preimage upserted.");
+                // Child steps: Create (PreOperation) and Update (PreOperation with lookup filtering)
+                var createMessageId = GetSdkMessageId("Create");
+                foreach (var related in configuration.RelatedEntities ?? Enumerable.Empty<RelatedEntityConfigModel>())
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    // Create step for child
+                    var childCreateFilterId = GetSdkMessageFilterId(createMessageId, related.EntityName);
+                    var childCreateStepId = UpsertChildCreateStep(configuration, related, pluginType, createMessageId, childCreateFilterId, progress);
+
+                    if (solutionId.HasValue && solutionId != Guid.Empty)
+                    {
+                        AddComponentsToSolution(pluginType, childCreateStepId, Guid.Empty, solutionId.Value, progress);
+                    }
+
+                    // Update step for child (only if lookupFieldName provided)
+                    if (!string.IsNullOrWhiteSpace(related.LookupFieldName))
+                    {
+                        var childUpdateFilterId = GetSdkMessageFilterId(updateMessageId, related.EntityName);
+                        var childUpdateStepId = UpsertChildUpdateStep(configuration, related, pluginType, updateMessageId, childUpdateFilterId, progress);
+                        var childUpdatePreImageId = UpsertChildUpdatePreImage(childUpdateStepId, related, progress);
+
+                        if (solutionId.HasValue && solutionId != Guid.Empty)
+                        {
+                            AddComponentsToSolution(pluginType, childUpdateStepId, childUpdatePreImageId, solutionId.Value, progress);
+                        }
+                    }
+                    else
+                    {
+                        progress.Report($"Warning: 'lookupFieldName' not set for child '{related.EntityName}'. Skipping child Update step (relink). Create step published.");
+                    }
+                }
+
+                progress.Report("Publish complete: parent and child steps upserted.");
             }, cancellationToken);
         }
 
-        public Task UpdatePluginAssemblyAsync(string assemblyPath, IProgress<string> progress, CancellationToken cancellationToken)
+        public Task UpdatePluginAssemblyAsync(string assemblyPath, IProgress<string> progress, CancellationToken cancellationToken, Guid? solutionId = null)
         {
             return Task.Run(() =>
             {
@@ -236,8 +269,40 @@ namespace CascadeFields.Configurator.Services
                     progress.Report("Plugin type updated.");
                 }
 
+                // Optionally add assembly/type to solution
+                if (solutionId.HasValue && solutionId.Value != Guid.Empty)
+                {
+                    progress.Report("Adding plugin assembly and type to solution...");
+                    AddPluginAssemblyComponentsToSolution(assemblyEntity.Id, typeEntity.Id, solutionId.Value, progress);
+                }
+
                 progress.Report("Plugin assembly update complete.");
             }, cancellationToken);
+        }
+
+        private void AddPluginAssemblyComponentsToSolution(Guid assemblyId, Guid typeId, Guid solutionId, IProgress<string> progress)
+        {
+            try
+            {
+                var added = 0;
+
+                // Plugin Assembly component type = 91
+                // Note: When you add a plugin assembly to a solution with AddRequiredComponents=false,
+                // it only adds the assembly. The plugin types are registered within the assembly but 
+                // don't have their own solution component entries.
+                if (!ComponentExistsInSolution(solutionId, 91, assemblyId))
+                {
+                    AddSolutionComponent(solutionId, 91, assemblyId);
+                    added++;
+                    progress.Report("Added plugin assembly to solution.");
+                }
+
+                progress.Report($"Solution component assignment complete ({added} component(s) added).");
+            }
+            catch (Exception ex)
+            {
+                progress.Report($"Warning: Failed to add plugin components to solution: {ex.Message}");
+            }
         }
 
         private Guid? FindPluginAssemblyId(string assemblyName)
@@ -250,6 +315,54 @@ namespace CascadeFields.Configurator.Services
             query.Criteria.AddCondition("name", ConditionOperator.Equal, assemblyName);
             var results = _service.RetrieveMultiple(query);
             return results.Entities.Count > 0 ? (Guid?)results.Entities[0].Id : null;
+        }
+
+        public (bool isRegistered, bool needsUpdate, string? registeredVersion, string? fileVersion) CheckPluginStatus(string assemblyPath)
+        {
+            try
+            {
+                var assemblyName = "CascadeFields.Plugin";
+                
+                // Get file version
+                string? fileVersion = null;
+                if (System.IO.File.Exists(assemblyPath))
+                {
+                    var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assemblyPath);
+                    fileVersion = versionInfo.FileVersion;
+                }
+
+                // Check if assembly is registered
+                var query = new QueryExpression("pluginassembly")
+                {
+                    ColumnSet = new ColumnSet("pluginassemblyid", "name", "version"),
+                    Criteria = new FilterExpression()
+                };
+                query.Criteria.AddCondition("name", ConditionOperator.Equal, assemblyName);
+                var results = _service.RetrieveMultiple(query);
+
+                if (results.Entities.Count == 0)
+                {
+                    return (false, false, null, fileVersion);
+                }
+
+                var assembly = results.Entities[0];
+                var registeredVersion = assembly.Contains("version") ? assembly.GetAttributeValue<string>("version") : null;
+
+                // Compare versions
+                bool needsUpdate = false;
+                if (!string.IsNullOrEmpty(fileVersion) && !string.IsNullOrEmpty(registeredVersion))
+                {
+                    // Simple string comparison - could be enhanced with Version.Parse if needed
+                    needsUpdate = fileVersion != registeredVersion;
+                }
+
+                return (true, needsUpdate, registeredVersion, fileVersion);
+            }
+            catch
+            {
+                // If any error, assume not registered
+                return (false, false, null, null);
+            }
         }
 
         private Guid? FindPluginTypeId(string typeName)
@@ -391,6 +504,46 @@ namespace CascadeFields.Configurator.Services
             return id;
         }
 
+        private Guid UpsertChildCreateStep(CascadeConfigurationModel config, RelatedEntityConfigModel related, Entity pluginType, Guid messageId, Guid filterId, IProgress<string> progress)
+        {
+            var stepName = $"CascadeFields (Child Create): {related.EntityName}";
+            var query = new QueryExpression("sdkmessageprocessingstep")
+            {
+                ColumnSet = new ColumnSet(true)
+            };
+            query.Criteria.AddCondition("name", ConditionOperator.Equal, stepName);
+            query.Criteria.AddCondition("plugintypeid", ConditionOperator.Equal, pluginType.Id);
+            var existing = _service.RetrieveMultiple(query).Entities.FirstOrDefault();
+
+            var step = new Entity("sdkmessageprocessingstep");
+            if (existing != null) step.Id = existing.Id;
+            step["name"] = stepName;
+            step["plugintypeid"] = new EntityReference("plugintype", pluginType.Id);
+            step["sdkmessageid"] = new EntityReference("sdkmessage", messageId);
+            step["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId);
+            step["stage"] = new OptionSetValue(20); // Pre-operation
+            step["mode"] = new OptionSetValue(0); // Sync
+            step["rank"] = 1;
+            step["supporteddeployment"] = new OptionSetValue(0); // Server
+            step["configuration"] = JsonConvert.SerializeObject(config);
+            // Filtering attributes are not applicable to Create; omit
+
+            Guid id;
+            if (step.Id == Guid.Empty)
+            {
+                id = _service.Create(step);
+                progress.Report($"Created child Create step for '{related.EntityName}'.");
+            }
+            else
+            {
+                _service.Update(step);
+                id = step.Id;
+                progress.Report($"Updated child Create step for '{related.EntityName}'.");
+            }
+
+            return id;
+        }
+
         private void AddComponentsToSolution(Entity pluginType, Guid stepId, Guid preImageId, Guid solutionId, IProgress<string> progress)
         {
             try
@@ -468,14 +621,110 @@ namespace CascadeFields.Configurator.Services
 
         private void AddSolutionComponent(Guid solutionId, int componentType, Guid componentId)
         {
-            var component = new Entity("solutioncomponent")
+            // Use AddSolutionComponent message instead of Create
+            var request = new OrganizationRequest("AddSolutionComponent")
             {
-                ["solutionid"] = new EntityReference("solution", solutionId),
-                ["componenttype"] = new OptionSetValue(componentType),
-                ["objectid"] = componentId
+                ["ComponentId"] = componentId,
+                ["ComponentType"] = componentType,
+                ["SolutionUniqueName"] = GetSolutionUniqueName(solutionId),
+                ["AddRequiredComponents"] = false
             };
 
-            _service.Create(component);
+            _service.Execute(request);
         }
-    }
+
+        private string GetSolutionUniqueName(Guid solutionId)
+        {
+            var solution = _service.Retrieve("solution", solutionId, new ColumnSet("uniquename"));
+            return solution.GetAttributeValue<string>("uniquename") ?? string.Empty;
+        }
+
+        private Guid UpsertChildUpdateStep(CascadeConfigurationModel config, RelatedEntityConfigModel related, Entity pluginType, Guid messageId, Guid filterId, IProgress<string> progress)
+        {
+            var stepName = $"CascadeFields (Child Relink): {related.EntityName}";
+            var query = new QueryExpression("sdkmessageprocessingstep")
+            {
+                ColumnSet = new ColumnSet(true)
+            };
+            query.Criteria.AddCondition("name", ConditionOperator.Equal, stepName);
+            query.Criteria.AddCondition("plugintypeid", ConditionOperator.Equal, pluginType.Id);
+            var existing = _service.RetrieveMultiple(query).Entities.FirstOrDefault();
+
+            var step = new Entity("sdkmessageprocessingstep");
+            if (existing != null) step.Id = existing.Id;
+            step["name"] = stepName;
+            step["plugintypeid"] = new EntityReference("plugintype", pluginType.Id);
+            step["sdkmessageid"] = new EntityReference("sdkmessage", messageId);
+            step["sdkmessagefilterid"] = new EntityReference("sdkmessagefilter", filterId);
+            step["stage"] = new OptionSetValue(20); // Pre-operation
+            step["mode"] = new OptionSetValue(0); // Sync
+            step["rank"] = 1;
+            step["supporteddeployment"] = new OptionSetValue(0); // Server
+            step["configuration"] = JsonConvert.SerializeObject(config);
+
+            // Filtering attributes: only the lookup field triggers this update
+            if (!string.IsNullOrWhiteSpace(related.LookupFieldName))
+            {
+                step["filteringattributes"] = related.LookupFieldName;
+            }
+
+            Guid id;
+            if (step.Id == Guid.Empty)
+            {
+                id = _service.Create(step);
+                progress.Report($"Created child Update step for '{related.EntityName}'.");
+            }
+            else
+            {
+                _service.Update(step);
+                id = step.Id;
+                progress.Report($"Updated child Update step for '{related.EntityName}'.");
+            }
+
+            return id;
+        }
+
+        private Guid UpsertChildUpdatePreImage(Guid stepId, RelatedEntityConfigModel related, IProgress<string> progress)
+        {
+            // Create unique PreImage name based on lookup field to support multiple relationships
+            // between the same parent and child entities
+            var preImageName = string.IsNullOrWhiteSpace(related.LookupFieldName) 
+                ? "PreImage" 
+                : $"PreImage_{related.LookupFieldName}";
+
+            var query = new QueryExpression("sdkmessageprocessingstepimage")
+            {
+                ColumnSet = new ColumnSet(true)
+            };
+            query.Criteria.AddCondition("sdkmessageprocessingstepid", ConditionOperator.Equal, stepId);
+            query.Criteria.AddCondition("name", ConditionOperator.Equal, preImageName);
+            var existing = _service.RetrieveMultiple(query).Entities.FirstOrDefault();
+
+            var image = new Entity("sdkmessageprocessingstepimage");
+            Guid id;
+            if (existing != null)
+            {
+                image.Id = existing.Id;
+            }
+            image["sdkmessageprocessingstepid"] = new EntityReference("sdkmessageprocessingstep", stepId);
+            image["name"] = preImageName;
+            image["entityalias"] = preImageName;
+            image["imagetype"] = new OptionSetValue(0); // PreImage
+            image["messagepropertyname"] = "Target";
+            image["attributes"] = related.LookupFieldName ?? string.Empty; // Only the child lookup field
+
+            if (image.Id == Guid.Empty)
+            {
+                id = _service.Create(image);
+                progress.Report($"Created child PreImage ({preImageName}).");
+            }
+            else
+            {
+                _service.Update(image);
+                id = image.Id;
+                progress.Report($"Updated child PreImage ({preImageName}).");
+            }
+
+            return id;
+        }    }
 }

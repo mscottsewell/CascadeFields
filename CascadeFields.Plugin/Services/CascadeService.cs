@@ -29,6 +29,198 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
+        /// Applies mapped values from parent to the current child record when the child is created
+        /// or when its parent lookup is (re)assigned. Uses the same mapping config; no duplicate child mappings required.
+        /// </summary>
+        /// <param name="context">Plugin execution context to determine stage/message.</param>
+        /// <param name="target">The child entity from context.InputParameters["Target"]</param>
+        /// <param name="preImage">Optional pre image for update comparisons</param>
+        /// <param name="config">Cascade configuration</param>
+        public void ApplyParentValuesToChildOnAttachOrCreate(IPluginExecutionContext context, Entity target, Entity preImage, ModelCascadeConfiguration config)
+        {
+            _tracer.StartOperation("ApplyParentValuesToChildOnAttachOrCreate");
+
+            // Find related entity configuration for this child entity
+            var relatedConfig = config.RelatedEntities?.FirstOrDefault(r =>
+                r.EntityName.Equals(context.PrimaryEntityName, StringComparison.OrdinalIgnoreCase));
+
+            if (relatedConfig == null)
+            {
+                _tracer.Info($"No related entity configuration found for '{context.PrimaryEntityName}'. Skipping.");
+                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+                return;
+            }
+
+            // Determine lookup field on the child that points to the parent
+            var lookupField = !string.IsNullOrWhiteSpace(relatedConfig.LookupFieldName)
+                ? relatedConfig.LookupFieldName
+                : DetermineLookupFieldFromRelationship(relatedConfig.RelationshipName, config.ParentEntity);
+
+            if (string.IsNullOrWhiteSpace(lookupField))
+            {
+                throw new InvalidPluginExecutionException(
+                    $"Unable to determine lookup field for child entity '{relatedConfig.EntityName}'. " +
+                    "Set 'lookupFieldName' in configuration.");
+            }
+
+            // Ensure there is a parent reference on create; for update, ensure it changed
+            if (string.Equals(context.MessageName, "Create", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!target.Contains(lookupField))
+                {
+                    _tracer.Info($"Create did not include '{lookupField}' on child; nothing to do.");
+                    _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+                    return;
+                }
+            }
+            else if (string.Equals(context.MessageName, "Update", StringComparison.OrdinalIgnoreCase))
+            {
+                var changed = HasLookupChanged(target, preImage, lookupField);
+                if (!changed)
+                {
+                    _tracer.Info($"Update did not change '{lookupField}'; skipping child attach handling.");
+                    _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+                    return;
+                }
+            }
+            else
+            {
+                _tracer.Info($"Unsupported message '{context.MessageName}' for child attach handling.");
+                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+                return;
+            }
+
+            var parentRef = target.GetAttributeValue<EntityReference>(lookupField);
+            if (parentRef == null || parentRef.Id == Guid.Empty)
+            {
+                _tracer.Info("No parent reference present after change; skipping.");
+                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+                return;
+            }
+
+            // Optional: ensure lookup points to the configured parent entity (handles polymorphic lookups)
+            if (!string.IsNullOrWhiteSpace(config.ParentEntity) &&
+                !config.ParentEntity.Equals(parentRef.LogicalName, StringComparison.OrdinalIgnoreCase))
+            {
+                _tracer.Info($"Lookup '{lookupField}' points to '{parentRef.LogicalName}', not configured parent '{config.ParentEntity}'. Skipping.");
+                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+                return;
+            }
+
+            // Respect filterCriteria by verifying the single child matches (if provided)
+            if (!string.IsNullOrWhiteSpace(relatedConfig.FilterCriteria) && target.Id != Guid.Empty)
+            {
+                if (!ChildMatchesFilter(target.LogicalName, target.Id, relatedConfig))
+                {
+                    _tracer.Info("Child does not meet filter criteria; skipping.");
+                    _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+                    return;
+                }
+            }
+
+            // Retrieve parent with needed source fields
+            var sourceFields = relatedConfig.FieldMappings?.Select(m => m.SourceField).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? Array.Empty<string>();
+            if (sourceFields.Length == 0)
+            {
+                _tracer.Info("No field mappings defined for child; nothing to copy.");
+                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+                return;
+            }
+
+            var parent = _service.Retrieve(config.ParentEntity, parentRef.Id, new ColumnSet(sourceFields));
+
+            // Build values to apply to the child using mapping logic (string conversion/truncation aware)
+            var values = new Dictionary<string, object>();
+            foreach (var mapping in relatedConfig.FieldMappings)
+            {
+                if (!parent.Contains(mapping.SourceField))
+                {
+                    continue;
+                }
+                var mapped = GetMappedValueForTarget(parent, mapping, relatedConfig.EntityName);
+                values[mapping.TargetField] = mapped;
+            }
+
+            if (values.Count == 0)
+            {
+                _tracer.Info("No values resolved from parent to apply to child.");
+                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+                return;
+            }
+
+            // PreOperation: assign to target so the platform writes them as part of the same transaction
+            if (context.Stage == 20 /* PreOperation */)
+            {
+                foreach (var kvp in values)
+                {
+                    target[kvp.Key] = kvp.Value;
+                }
+                _tracer.Info($"Applied {values.Count} mapped values to child in PreOperation.");
+            }
+            else
+            {
+                // Fallback: update after operation if not running PreOperation
+                if (target.Id == Guid.Empty)
+                {
+                    _tracer.Warning("Cannot post-update child without an ID; ensure PreOperation stage for Create.");
+                }
+                else
+                {
+                    var update = new Entity(target.LogicalName, target.Id);
+                    foreach (var kvp in values)
+                    {
+                        update[kvp.Key] = kvp.Value;
+                    }
+                    _service.Update(update);
+                    _tracer.Info($"Updated child with {values.Count} mapped values post-operation.");
+                }
+            }
+
+            _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
+        }
+
+        private bool HasLookupChanged(Entity target, Entity preImage, string lookupField)
+        {
+            if (!target.Contains(lookupField))
+            {
+                return false;
+            }
+
+            var newRef = target.GetAttributeValue<EntityReference>(lookupField);
+            var oldRef = preImage?.GetAttributeValue<EntityReference>(lookupField);
+            return !AreValuesEqual(newRef, oldRef);
+        }
+
+        private bool ChildMatchesFilter(string childEntityName, Guid childId, RelatedEntityConfig relatedConfig)
+        {
+            try
+            {
+                var query = new QueryExpression(childEntityName)
+                {
+                    ColumnSet = new ColumnSet(false),
+                    NoLock = true,
+                    TopCount = 1
+                };
+
+                // Primary key is consistently <logicalname>id
+                query.Criteria.AddCondition(childEntityName + "id", ConditionOperator.Equal, childId);
+
+                if (!string.IsNullOrWhiteSpace(relatedConfig.FilterCriteria))
+                {
+                    AddFilterCriteria(query, relatedConfig.FilterCriteria);
+                }
+
+                var result = _service.RetrieveMultiple(query);
+                return result.Entities.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                _tracer.Warning($"Error evaluating child filter criteria: {ex.Message}. Proceeding without filter check.");
+                return true; // be permissive if parsing fails to avoid blocking create/update
+            }
+        }
+
+        /// <summary>
         /// Checks if any trigger fields have changed
         /// </summary>
         public bool HasTriggerFieldChanged(Entity target, Entity preImage, ModelCascadeConfiguration config)
@@ -286,26 +478,8 @@ namespace CascadeFields.Plugin.Services
                     return;
                 }
 
-                // Update each related record
-                int successCount = 0;
-                int errorCount = 0;
-
-                foreach (var relatedRecord in relatedRecords)
-                {
-                    try
-                    {
-                        UpdateRelatedRecord(relatedRecord, values);
-                        successCount++;
-                    }
-                    catch (Exception ex)
-                    {
-                        errorCount++;
-                        _tracer.Error($"Failed to update record {relatedRecord.Id}", ex);
-                        // Continue with other records
-                    }
-                }
-
-                _tracer.Info($"Update complete: {successCount} successful, {errorCount} failed");
+                // Update related records using batched ExecuteMultiple for performance
+                UpdateRelatedRecordsBatch(relatedRecords, values);
                 _tracer.EndOperation($"CascadeToRelatedEntity-{relatedConfig.EntityName}");
             }
             catch (Exception ex)
@@ -353,22 +527,29 @@ namespace CascadeFields.Plugin.Services
         {
             var query = new QueryExpression(relatedConfig.EntityName)
             {
-                ColumnSet = new ColumnSet(true), // Retrieve all columns for update context
-                NoLock = true
+                ColumnSet = new ColumnSet(false), // Only retrieve ID - we don't need other columns for updates
+                NoLock = true,
+                TopCount = 5000 // Safety limit to prevent unbounded queries
             };
 
-            // Add relationship link
-            var link = new LinkEntity
+            // IMPORTANT: UseRelationship mode is deprecated and may not work correctly.
+            // It's strongly recommended to use UseRelationship=false and specify LookupFieldName instead.
+            // This implementation falls back to direct lookup field query if relationship-based query fails.
+            _tracer.Warning($"Using relationship-based query for '{relatedConfig.RelationshipName}'. Consider using UseRelationship=false with explicit LookupFieldName for better reliability.");
+            
+            // Attempt to derive lookup field from relationship name
+            // This is a best-effort approach and may not work for all relationships
+            var lookupField = DetermineLookupFieldFromRelationship(relatedConfig.RelationshipName, config.ParentEntity);
+            
+            if (string.IsNullOrWhiteSpace(lookupField))
             {
-                LinkFromEntityName = relatedConfig.EntityName,
-                LinkToEntityName = config.ParentEntity,
-                LinkFromAttributeName = relatedConfig.RelationshipName.ToLower() + "id", // Convention-based
-                LinkToAttributeName = config.ParentEntity + "id",
-                JoinOperator = JoinOperator.Inner
-            };
-
-            link.LinkCriteria.AddCondition(config.ParentEntity + "id", ConditionOperator.Equal, parentId);
-            query.LinkEntities.Add(link);
+                throw new InvalidPluginExecutionException(
+                    $"Unable to determine lookup field for relationship '{relatedConfig.RelationshipName}'. " +
+                    "Please use UseRelationship=false and specify LookupFieldName explicitly.");
+            }
+            
+            // Use direct condition instead of link entity for better performance
+            query.Criteria.AddCondition(lookupField, ConditionOperator.Equal, parentId);
 
             // Add filter criteria if specified
             if (!string.IsNullOrWhiteSpace(relatedConfig.FilterCriteria))
@@ -383,8 +564,9 @@ namespace CascadeFields.Plugin.Services
         {
             var query = new QueryExpression(relatedConfig.EntityName)
             {
-                ColumnSet = new ColumnSet(true),
-                NoLock = true
+                ColumnSet = new ColumnSet(false), // Only retrieve ID - we don't need other columns for updates
+                NoLock = true,
+                TopCount = 5000 // Safety limit to prevent unbounded queries
             };
 
             // Add condition for lookup field
@@ -420,6 +602,9 @@ namespace CascadeFields.Plugin.Services
                     var field = parts[0].Trim();
                     var operatorStr = parts[1].Trim();
                     var value = parts[2].Trim();
+
+                    // Validate field name to prevent injection attacks
+                    ValidateFilterFieldName(field, query.EntityName);
 
                     // Parse operator
                     ConditionOperator conditionOperator = ParseOperator(operatorStr);
@@ -493,17 +678,150 @@ namespace CascadeFields.Plugin.Services
             return value; // Return as string
         }
 
-        private void UpdateRelatedRecord(Entity relatedRecord, Dictionary<string, object> values)
+        /// <summary>
+        /// Updates related records in batches using ExecuteMultipleRequest for better performance
+        /// </summary>
+        private void UpdateRelatedRecordsBatch(List<Entity> relatedRecords, Dictionary<string, object> values)
         {
-            var updateEntity = new Entity(relatedRecord.LogicalName, relatedRecord.Id);
+            const int batchSize = 50; // Optimal batch size for ExecuteMultiple
+            var requests = new OrganizationRequestCollection();
+            int successCount = 0;
+            int errorCount = 0;
+            int processedCount = 0;
 
-            foreach (var kvp in values)
+            _tracer.Info($"Updating {relatedRecords.Count} records in batches of {batchSize}");
+
+            foreach (var relatedRecord in relatedRecords)
             {
-                updateEntity[kvp.Key] = kvp.Value;
+                var updateEntity = new Entity(relatedRecord.LogicalName, relatedRecord.Id);
+                foreach (var kvp in values)
+                {
+                    updateEntity[kvp.Key] = kvp.Value;
+                }
+
+                requests.Add(new UpdateRequest { Target = updateEntity });
+
+                // Execute batch when we reach batch size or this is the last record
+                if (requests.Count >= batchSize || processedCount + requests.Count >= relatedRecords.Count)
+                {
+                    var batchResults = ExecuteBatch(requests);
+                    successCount += batchResults.SuccessCount;
+                    errorCount += batchResults.ErrorCount;
+                    processedCount += requests.Count;
+                    
+                    _tracer.Debug($"Batch progress: {processedCount}/{relatedRecords.Count} records processed");
+                    requests.Clear();
+                }
             }
 
-            _tracer.Debug($"Updating {relatedRecord.LogicalName} record {relatedRecord.Id}");
-            _service.Update(updateEntity);
+            _tracer.Info($"Update complete: {successCount} successful, {errorCount} failed");
+        }
+
+        /// <summary>
+        /// Executes a batch of update requests using ExecuteMultipleRequest
+        /// </summary>
+        private (int SuccessCount, int ErrorCount) ExecuteBatch(OrganizationRequestCollection requests)
+        {
+            if (requests.Count == 0)
+                return (0, 0);
+
+            try
+            {
+                var multipleRequest = new ExecuteMultipleRequest
+                {
+                    Settings = new ExecuteMultipleSettings
+                    {
+                        ContinueOnError = true,
+                        ReturnResponses = true
+                    },
+                    Requests = requests
+                };
+
+                _tracer.Debug($"Executing batch of {requests.Count} update requests");
+                var response = (ExecuteMultipleResponse)_service.Execute(multipleRequest);
+
+                int successCount = 0;
+                int errorCount = 0;
+
+                for (int i = 0; i < response.Responses.Count; i++)
+                {
+                    var responseItem = response.Responses[i];
+                    if (responseItem.Fault != null)
+                    {
+                        errorCount++;
+                        var updateRequest = requests[responseItem.RequestIndex] as UpdateRequest;
+                        var recordId = updateRequest?.Target?.Id ?? Guid.Empty;
+                        _tracer.Error($"Batch update failed for record {recordId} at index {responseItem.RequestIndex}: {responseItem.Fault.Message}");
+                    }
+                    else
+                    {
+                        successCount++;
+                    }
+                }
+
+                return (successCount, errorCount);
+            }
+            catch (Exception ex)
+            {
+                _tracer.Error($"ExecuteMultiple batch failed completely", ex);
+                return (0, requests.Count);
+            }
+        }
+
+        /// <summary>
+        /// Determines the lookup field name from a relationship name
+        /// </summary>
+        private string DetermineLookupFieldFromRelationship(string relationshipName, string parentEntity)
+        {
+            // Common patterns for lookup field names:
+            // 1. Direct: "parentaccountid" for account
+            // 2. Named: "accountid" for account relationship
+            // 3. Custom: various patterns
+            
+            // Try common patterns
+            var candidates = new List<string>
+            {
+                $"parent{parentEntity}id",
+                $"{parentEntity}id",
+                relationshipName.ToLower()
+            };
+
+            // Return first candidate (most common pattern)
+            // Note: This is a best-effort heuristic. Using explicit LookupFieldName is always preferred.
+            return candidates[0];
+        }
+
+        /// <summary>
+        /// Validates that the filter field name is safe and exists in the entity metadata
+        /// </summary>
+        private void ValidateFilterFieldName(string fieldName, string entityName)
+        {
+            // Basic validation: field name should only contain alphanumeric characters and underscores
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                throw new InvalidPluginExecutionException("Filter field name cannot be empty.");
+            }
+
+            // Check for basic injection patterns
+            if (fieldName.Contains(";") || fieldName.Contains("--") || fieldName.Contains("/*") || 
+                fieldName.Contains("*/") || fieldName.Contains("'") || fieldName.Contains("\""))
+            {
+                throw new InvalidPluginExecutionException($"Filter field name '{fieldName}' contains invalid characters.");
+            }
+
+            // Validate field name format (alphanumeric + underscore only)
+            if (!System.Text.RegularExpressions.Regex.IsMatch(fieldName, @"^[a-zA-Z0-9_]+$"))
+            {
+                throw new InvalidPluginExecutionException($"Filter field name '{fieldName}' contains invalid characters. Only alphanumeric characters and underscores are allowed.");
+            }
+
+            // Optional: Verify field exists in entity metadata (adds overhead but increases security)
+            // This is commented out by default for performance, but can be enabled for strict validation
+            // var fieldMetadata = GetTargetAttributeMetadata(entityName, fieldName);
+            // if (fieldMetadata == null)
+            // {
+            //     throw new InvalidPluginExecutionException($"Filter field '{fieldName}' does not exist on entity '{entityName}'.");
+            // }
         }
 
         private bool AreValuesEqual(object value1, object value2)

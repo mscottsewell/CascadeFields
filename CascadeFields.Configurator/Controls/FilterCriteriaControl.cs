@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using CascadeFields.Configurator.Models;
@@ -108,6 +109,8 @@ namespace CascadeFields.Configurator.Controls
         {
             if (e.Control is ComboBox combo && gridFilters.CurrentCell != null)
             {
+                ApplyComboBoxStyling(combo);
+
                 // Ensure operator column has its items when editing starts
                 if (gridFilters.CurrentCell.ColumnIndex == colOperator.Index)
                 {
@@ -135,6 +138,58 @@ namespace CascadeFields.Configurator.Controls
             {
                 gridFilters.CommitEdit(DataGridViewDataErrorContexts.Commit);
             }
+        }
+
+        private void ApplyComboBoxStyling(ComboBox comboBox)
+        {
+            comboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboBox.DrawMode = DrawMode.OwnerDrawFixed;
+            comboBox.FlatStyle = FlatStyle.Flat;
+            comboBox.BackColor = SystemColors.Window;
+            comboBox.ForeColor = SystemColors.WindowText;
+
+            comboBox.DrawItem -= ComboBox_DrawItem;
+            comboBox.DrawItem += ComboBox_DrawItem;
+        }
+
+        private void ComboBox_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || sender is not ComboBox combo)
+                return;
+
+            var item = combo.Items[e.Index];
+            string displayText;
+
+            if (item is AttributeItem attribute)
+            {
+                displayText = attribute.FilterDisplayName ?? attribute.LogicalName ?? string.Empty;
+            }
+            else if (item is FilterOperator op)
+            {
+                displayText = op.Display ?? op.Code ?? string.Empty;
+            }
+            else
+            {
+                displayText = item?.ToString() ?? string.Empty;
+            }
+
+            var isSelected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            var backColor = isSelected ? SystemColors.Highlight : SystemColors.Window;
+            var foreColor = isSelected ? SystemColors.HighlightText : SystemColors.WindowText;
+
+            using (var backBrush = new SolidBrush(backColor))
+            {
+                e.Graphics.FillRectangle(backBrush, e.Bounds);
+            }
+
+            var textBounds = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 1, e.Bounds.Width - 4, e.Bounds.Height - 2);
+
+            using (var textBrush = new SolidBrush(foreColor))
+            {
+                e.Graphics.DrawString(displayText, e.Font, textBrush, textBounds);
+            }
+
+            e.DrawFocusRectangle();
         }
 
         private void GridFilters_CellValueChanged(object? sender, DataGridViewCellEventArgs e)

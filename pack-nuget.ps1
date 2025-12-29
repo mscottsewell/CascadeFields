@@ -93,6 +93,11 @@ New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
 # Refresh plugin payload into Assets/plugin for packaging and deployment
 New-Item -ItemType Directory -Force -Path $assetsPluginDir | Out-Null
+# Ensure legacy Assets\plugin folder is removed so we only ship Assets/DataversePlugin
+$legacyPluginDir = Join-Path $projDir "Assets/plugin"
+if (Test-Path $legacyPluginDir) {
+    Remove-Item $legacyPluginDir -Recurse -Force -ErrorAction SilentlyContinue
+}
 $pluginBuild = Join-Path $PSScriptRoot "CascadeFields.Plugin/bin/$Configuration/net462"
 if (-not (Test-Path $pluginBuild)) {
     throw "Plugin build output not found at $pluginBuild"
@@ -149,17 +154,6 @@ if (-not $SkipDeploy) {
         }
     }
     
-    # Copy Plugin DLL to root Plugins folder so XrmToolBox can resolve the assembly reference
-    $pluginDll = Join-Path $pluginBuild "CascadeFields.Plugin.dll"
-    if (Test-Path $pluginDll) {
-        try {
-            Copy-Item $pluginDll -Destination $XrmToolBoxPluginsPath -Force
-            Write-Info "Copied CascadeFields.Plugin.dll to Plugins root"
-        } catch {
-            Write-Warning "Could not copy CascadeFields.Plugin.dll: $($_.Exception.Message)"
-        }
-    }
-
     # Copy Assets folder to CascadeFieldsConfigurator subfolder
     $assetsDestination = Join-Path $pluginSubfolder "Assets"
     if (Test-Path $assetsDestination) {

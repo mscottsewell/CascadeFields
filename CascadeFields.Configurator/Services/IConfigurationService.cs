@@ -35,5 +35,25 @@ namespace CascadeFields.Configurator.Services
         /// </summary>
         /// <param name="parentEntityLogicalName">Logical name of the parent entity</param>
         Task<string?> GetConfigurationForParentEntityAsync(string parentEntityLogicalName);
+
+        /// <summary>
+        /// Updates (upserts) the CascadeFields plugin assembly and type, optionally adding them to a solution
+        /// </summary>
+        /// <param name="assemblyPath">Path to CascadeFields.Plugin.dll</param>
+        /// <param name="progress">Progress reporter</param>
+        /// <param name="cancellationToken">Cancellation token</param>
+        /// <param name="solutionId">Optional solution to add the assembly and plugintype to</param>
+        Task UpdatePluginAssemblyAsync(
+            string assemblyPath,
+            IProgress<string> progress,
+            CancellationToken cancellationToken,
+            Guid? solutionId = null);
+
+        /// <summary>
+        /// Checks the status of the CascadeFields plugin
+        /// </summary>
+        /// <param name="assemblyPath">Path to CascadeFields.Plugin.dll to compare version</param>
+        /// <returns>Tuple: (isRegistered, needsUpdate, registeredVersion, fileVersion)</returns>
+        (bool isRegistered, bool needsUpdate, string? registeredVersion, string? fileVersion) CheckPluginStatus(string assemblyPath);
     }
 }

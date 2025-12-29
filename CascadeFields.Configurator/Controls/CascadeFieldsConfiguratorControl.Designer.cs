@@ -120,9 +120,11 @@ namespace CascadeFields.Configurator.Controls
             // btnLoadMetadata
             // 
             btnLoadMetadata.FlatStyle = FlatStyle.Flat;
-            btnLoadMetadata.Text = "Load Metadata";
+            btnLoadMetadata.Text = "Reload Metadata";
             btnLoadMetadata.AutoSize = true;
             btnLoadMetadata.Margin = new Padding(4);
+            btnLoadMetadata.FlatAppearance.BorderSize = 0;
+            btnLoadMetadata.UseVisualStyleBackColor = true;
             // 
             // btnAddChildRelationship
             // 
@@ -130,6 +132,8 @@ namespace CascadeFields.Configurator.Controls
             btnAddChildRelationship.Text = "Add Child Relationship";
             btnAddChildRelationship.AutoSize = true;
             btnAddChildRelationship.Margin = new Padding(4);
+            btnAddChildRelationship.FlatAppearance.BorderSize = 0;
+            btnAddChildRelationship.UseVisualStyleBackColor = true;
             // 
             // btnRemoveRelationship
             // 
@@ -137,6 +141,8 @@ namespace CascadeFields.Configurator.Controls
             btnRemoveRelationship.Text = "Remove Relationship";
             btnRemoveRelationship.AutoSize = true;
             btnRemoveRelationship.Margin = new Padding(4);
+            btnRemoveRelationship.FlatAppearance.BorderSize = 0;
+            btnRemoveRelationship.UseVisualStyleBackColor = true;
             // 
             // btnRetrieveConfigured
             // 
@@ -144,6 +150,8 @@ namespace CascadeFields.Configurator.Controls
             btnRetrieveConfigured.Text = "Retrieve Configured Entity";
             btnRetrieveConfigured.AutoSize = true;
             btnRetrieveConfigured.Margin = new Padding(4);
+            btnRetrieveConfigured.FlatAppearance.BorderSize = 0;
+            btnRetrieveConfigured.UseVisualStyleBackColor = true;
             // 
             // btnUpdatePlugin
             // 
@@ -151,6 +159,8 @@ namespace CascadeFields.Configurator.Controls
             btnUpdatePlugin.Text = "Update Cascade Fields Plug-in";
             btnUpdatePlugin.AutoSize = true;
             btnUpdatePlugin.Margin = new Padding(4);
+            btnUpdatePlugin.FlatAppearance.BorderSize = 0;
+            btnUpdatePlugin.UseVisualStyleBackColor = true;
             // 
             // btnPublish
             // 
@@ -158,6 +168,8 @@ namespace CascadeFields.Configurator.Controls
             btnPublish.Text = "Publish Configuration";
             btnPublish.AutoSize = true;
             btnPublish.Margin = new Padding(4);
+            btnPublish.FlatAppearance.BorderSize = 0;
+            btnPublish.UseVisualStyleBackColor = true;
             // 
             // btnClearSession
             // 
@@ -165,6 +177,8 @@ namespace CascadeFields.Configurator.Controls
             btnClearSession.Text = "Clear Session";
             btnClearSession.AutoSize = true;
             btnClearSession.Margin = new Padding(4);
+            btnClearSession.FlatAppearance.BorderSize = 0;
+            btnClearSession.UseVisualStyleBackColor = true;
             // 
             // splitContainerMain
             // 

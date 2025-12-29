@@ -145,12 +145,26 @@ namespace CascadeFields.Configurator.ViewModels
         /// </summary>
         public RelatedEntityConfigModel ToRelatedEntityConfig()
         {
+            var lookupFieldName = SelectedRelationship?.ReferencingAttribute;
+            var useRelationship = SelectedRelationship is not null;
+
+            // Prefer explicit lookup field over relationship for reliability
+            // Child relink step requires lookupFieldName to be set
+            if (useRelationship && string.IsNullOrWhiteSpace(lookupFieldName))
+            {
+                // Log a warning that child relink step won't be published
+                System.Diagnostics.Debug.WriteLine(
+                    $"Warning: Relationship '{SelectedRelationship?.SchemaName}' for child entity '{ChildEntityLogicalName}' " +
+                    $"does not have a lookup field name. Child relink step will not be published. " +
+                    $"Set 'useRelationship: false' and provide 'lookupFieldName' for full child support.");
+            }
+
             return new RelatedEntityConfigModel
             {
                 EntityName = ChildEntityLogicalName,
                 RelationshipName = SelectedRelationship?.SchemaName,
-                UseRelationship = SelectedRelationship is not null,
-                LookupFieldName = SelectedRelationship?.ReferencingAttribute,
+                UseRelationship = useRelationship,
+                LookupFieldName = lookupFieldName,
                 FilterCriteria = BuildFilterString(),
                 FieldMappings = FieldMappings
                     .Where(m => m.IsValid)

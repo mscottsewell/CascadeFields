@@ -88,13 +88,20 @@ namespace CascadeFields.Plugin.Helpers
                 return false;
             }
 
-            if (!config.ParentEntity.Equals(entityName, StringComparison.OrdinalIgnoreCase))
+            // Apply when running on the configured parent entity or any configured child entity
+            if (config.ParentEntity.Equals(entityName, StringComparison.OrdinalIgnoreCase))
             {
-                _tracer.Warning($"Configuration parent entity '{config.ParentEntity}' does not match context entity '{entityName}'");
-                return false;
+                return true;
             }
 
-            return true;
+            if (config.RelatedEntities != null &&
+                config.RelatedEntities.Exists(r => r.EntityName.Equals(entityName, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            _tracer.Warning($"Configuration does not apply to entity '{entityName}'. Parent: '{config.ParentEntity}'.");
+            return false;
         }
     }
 }

@@ -1,28 +1,52 @@
 # CascadeFields Plugin for Microsoft Dataverse
 
-A flexible, configurable plugin for Microsoft Dataverse (Dynamics 365) that automatically cascades field values from parent records to related child records based on configurable rules.
+A flexible, configurable plugin for Microsoft Dataverse (Dynamics 365) that automatically cascades field values from parent records to related child records, and populates child records when created or relinked to a parent.
+
+## 📚 Documentation
+
+- **[Quick Start Guide](QUICKSTART.md)** - Get started in minutes with XrmToolBox Configurator
+- **[Configuration Guide](CONFIGURATION.md)** - Best practices, patterns, and examples
+- **[Examples Folder](Examples/)** - Ready-to-use configuration templates
 
 ## Features
 
+- ✅ **Parent & Child Triggering**: Cascade on parent updates AND when children are created/relinked
+- ✅ **Automatic Deployment**: XrmToolBox Configurator publishes parent and child plugin steps
 - ✅ **Configurable Field Mappings**: Define which fields to cascade from parent to child records
 - ✅ **Entity-Specific Mappings**: Each related entity can have its own unique field mappings
 - ✅ **Trigger Field Detection**: Only cascade when specific fields change
-- ✅ **Relationship-Based**: Support for both named relationships and lookup fields
-- ✅ **Filtering**: Apply filters to target only specific child records (e.g., only active records)
+- ✅ **Explicit Lookup Fields**: Reliable child detection using explicit lookup field names
+- ✅ **Filtering**: Apply filters to target only specific child records
+- ✅ **Batch Updates**: ExecuteMultipleRequest for 50-98% faster execution
+- ✅ **Security**: Field validation and injection protection in filter criteria
 - ✅ **Comprehensive Logging**: Detailed tracing for debugging and monitoring
-- ✅ **Error Handling**: Robust error handling to prevent data corruption
-- ✅ **Performance Optimized**: Asynchronous execution to avoid blocking user operations
 
 ## How It Works
 
-1. Plugin registers on the **Update** message of the parent entity
-2. When a record is updated, the plugin checks if any configured trigger fields changed
-3. If triggered, it retrieves related child records based on configured relationships and filters
-4. It updates the specified fields on matching child records with values from the parent
+### Parent-Side Cascade (Parent Update → Children)
+1. Plugin registers on **Update** message of parent entity (Post-operation, Async)
+2. When parent is updated, plugin checks if any configured trigger fields changed
+3. If triggered, retrieves related child records based on lookup fields and filters
+4. Updates specified fields on matching child records with values from parent
+
+### Child-Side Population (Child Created/Relinked → Copy from Parent)
+1. Plugin registers on **Create** and **Update** messages of child entities (Pre-operation, Sync)
+2. When child is created with parent lookup, or parent lookup changes, plugin detects it
+3. Retrieves parent record and extracts mapped field values
+4. Applies values directly to child in same transaction
 
 ## Configuration
 
-The plugin uses JSON configuration stored in the plugin step's **Unsecure Configuration** field.
+See **[CONFIGURATION.md](CONFIGURATION.md)** for detailed configuration guide including:
+- Best practices and recommended patterns
+- Filter criteria syntax and examples
+- Field mapping strategies
+- Production optimization
+- Complete examples
+
+### Quick Configuration Reference
+
+Basic JSON structure:
 
 ### Configuration Schema
 
@@ -66,11 +90,13 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 | Property | Type | Required | Description |
 | ---------- | ------ | ---------- | ------------- |
 | `entityName` | string | **Yes** | Logical name of the child entity |
-| `relationshipName` | string | Conditional | Name of the relationship (required if `useRelationship` is true) |
-| `useRelationship` | boolean | No | Use relationship name vs. lookup field (default: true) |
-| `lookupFieldName` | string | Conditional | Lookup field name (required if `useRelationship` is false) |
+| `lookupFieldName` | string | **Recommended** | Child's lookup field pointing to parent (e.g., `parentcustomerid`) |
+| `relationshipName` | string | Optional | Name of the relationship (legacy, not recommended) |
+| `useRelationship` | boolean | No | Use relationship name vs. lookup field (default: true, **set to false**) |
 | `filterCriteria` | string | No | Filter to apply to child records |
 | `fieldMappings` | array | **Yes** | Array of field mapping definitions for this entity |
+
+**Important**: Always specify `lookupFieldName` and set `useRelationship: false` for reliable child-side plugin support and relink handling.
 
 ### Field Mapping Properties
 
@@ -80,39 +106,15 @@ The plugin uses JSON configuration stored in the plugin step's **Unsecure Config
 | `targetField` | string | **Yes** | Field name on the child entity |
 | `isTriggerField` | boolean | No | If true, changes to this field trigger the cascade |
 
-**Note**: Field mappings are now defined **within each related entity**, allowing different entities to have different field mappings from the same parent.
+**Note**: Field mappings are defined **within each related entity**, allowing different entities to have different field mappings from the same parent.
 
 ### Lookup / Option Set to Text Targets
 
-- When the target field is a **text** (string/memo) field and the source value is a **lookup** or **option set**, the plugin writes the **display text** into the target.
-- For lookups, it uses the `name` on the `EntityReference` (or the formatted value) and falls back to the GUID if no name is present.
-- For option sets, it uses the formatted label when available; otherwise, it uses the numeric value.
-- Attribute metadata is cached per attribute to avoid repeated metadata calls; if metadata is unavailable, the raw value is used and a warning is logged.
-- If the resulting text exceeds the target field's max length, the plugin truncates to one character less than the limit and appends an ellipsis (…). A warning is logged when truncation occurs.
-
-### Filter criteria uses a simple pipe-delimited format:
-
-``` text
-field|operator|value;field2|operator2|value2
-```
-
-**Supported Operators:**
-
-- `eq`, `equal`, `=` - Equal
-- `ne`, `notequal`, `!=` - Not Equal
-- `gt`, `greaterthan`, `>` - Greater Than
-- `lt`, `lessthan`, `<` - Less Than
-- `in` - In (value list)
-- `notin` - Not In
-- `null` - Is Null
-- `notnull` - Is Not Null
-- `like` - Like (pattern matching)
-
-**Examples:**
-
-- `statecode|eq|0` - Active records only
-- `statecode|eq|0;revenue|gt|10000` - Active records with revenue > 10000
-- `primarycontactid|notnull|null` - Records with a primary contact
+When the target field is text and source is a lookup or option set:
+- **Lookup**: Uses display name, falls back to formatted value or GUID
+- **OptionSet**: Uses label text, falls back to numeric value
+- Automatically truncates with ellipsis (…) if too long for target field
+- Attribute metadata is cached for performance
 
 ## Configuration Examples
 
@@ -272,22 +274,29 @@ Same as Example 1 but with tracing disabled for production environments:
 
 ## Installation & Deployment
 
+### Quick Start
+
+See **[QUICKSTART.md](QUICKSTART.md)** for step-by-step setup using the XrmToolBox Configurator tool.
+
 ### Prerequisites
 
-- Visual Studio 2019 or later
+- Visual Studio 2019 or later (for building from source)
 - .NET Framework 4.6.2 or later
-- Plugin Registration Tool
+- XrmToolBox with CascadeFields Configurator (recommended)
+- Plugin Registration Tool (for manual registration)
 - Access to a Dataverse environment
 
-### Build the Plugin
+### Build from Source
 
-1. Clone or download this repository
-2. Open `CascadeFields.sln` in Visual Studio
-3. Restore NuGet packages
-4. Build the solution in **Release** mode
-5. The compiled assembly will be in `CascadeFields.Plugin\bin\Release\net462\CascadeFields.Plugin.dll`
+```powershell
+git clone https://github.com/mscottsewell/CascadeFields.git
+cd CascadeFields
+dotnet build -c Release
+```
 
-**Note**: The assembly is strongly signed using `CascadeFields.snk`. This key file is required for Dataverse plugin deployment and is excluded from source control for security.
+Output: `CascadeFields.Plugin\bin\Release\net462\CascadeFields.Plugin.dll`
+
+**Note**: The assembly is strongly signed using `CascadeFields.snk`.
 
 ### Register the Plugin
 
@@ -298,9 +307,41 @@ Same as Example 1 but with tracing disabled for production environments:
 5. Choose **Database** for storage
 6. Click **Register Selected Plugins**
 
-### Register Plugin Steps
+### Automatic Publishing with the Configurator Tool
 
-For each parent entity you want to monitor:
+**Recommended**: Use the CascadeFields Configurator tool (XrmToolBox plugin) to automatically register and publish configurations:
+
+1. Open **XrmToolBox** and launch the **CascadeFields Configurator** tool
+2. Connect to your environment
+3. Configure your parent entity and child relationships in the UI
+4. Click **Publish Configuration** button in the ribbon
+5. The tool automatically creates:
+   - **Parent Update step** (PostOperation, Async) with PreImage
+   - **Child Create steps** (PreOperation, Sync) for each related entity
+   - **Child Update steps** (PreOperation, Sync) for each related entity when `lookupFieldName` is specified
+6. Optionally select a solution to add all components
+
+**What Gets Published:**
+
+| Step Type | Entity | Message | Stage | Mode | Purpose | PreImage |
+|-----------|--------|---------|-------|------|---------|----------|
+| Parent | `<ParentEntity>` | Update | PostOperation (40) | Async | Cascade changes to children | Yes (trigger fields) |
+| Child Create | `<ChildEntity>` | Create | PreOperation (20) | Sync | Populate child on creation | No |
+| Child Relink | `<ChildEntity>` | Update | PreOperation (20) | Sync | Update child when parent changes | Yes (lookup field) |
+
+**Child Relink Step Requirements:**
+
+- Only published when `lookupFieldName` is explicitly set in the configuration
+- Filters on changes to the lookup field only (no unnecessary triggers)
+- Recommended over `useRelationship: true` for reliability
+
+**Important:** Ensure each `relatedEntities` entry includes `lookupFieldName` (e.g., `parentcustomerid` for contact → account) to enable child relink handling. The Configurator will warn if this is missing.
+
+### Manual Registration (Advanced)
+
+For manual step registration without the Configurator:
+
+#### Parent Step
 
 1. Right-click the `CascadeFields.Plugin` assembly
 2. Select **Register New Step**
@@ -309,19 +350,47 @@ For each parent entity you want to monitor:
    - **Primary Entity**: Your parent entity (e.g., `account`)
    - **Event Pipeline Stage**: `PostOperation` (40)
    - **Execution Mode**: `Asynchronous`
-   - **Unsecure Configuration**: Paste your JSON configuration (see examples above)
-   - **Filtering Attributes**: Select the trigger fields to improve performance
+   - **Unsecure Configuration**: Paste your JSON configuration
+   - **Filtering Attributes**: Select the trigger fields
 4. Register a **PreImage**:
    - **Name**: `PreImage`
    - **Entity Alias**: `PreImage`
-   - **Parameters**: Select **All Attributes** or specific fields needed
-5. Click **Register New Step**
+   - **Parameters**: Include source fields from mappings
+
+#### Child Create Step (Per Related Entity)
+
+1. Right-click the `CascadeFields.Plugin` assembly
+2. Select **Register New Step**
+3. Configure the step:
+   - **Message**: `Create`
+   - **Primary Entity**: Your child entity (e.g., `contact`)
+   - **Event Pipeline Stage**: `PreOperation` (20)
+   - **Execution Mode**: `Synchronous`
+   - **Unsecure Configuration**: Same JSON as parent step
+4. No PreImage required for Create
+
+#### Child Update Step (Per Related Entity, Optional)
+
+1. Right-click the `CascadeFields.Plugin` assembly
+2. Select **Register New Step**
+3. Configure the step:
+   - **Message**: `Update`
+   - **Primary Entity**: Your child entity (e.g., `contact`)
+   - **Event Pipeline Stage**: `PreOperation` (20)
+   - **Execution Mode**: `Synchronous`
+   - **Unsecure Configuration**: Same JSON as parent step
+   - **Filtering Attributes**: The lookup field (e.g., `parentcustomerid`)
+4. Register a **PreImage**:
+   - **Name**: `PreImage`
+   - **Entity Alias**: `PreImage`
+   - **Parameters**: Include the lookup field
 
 ### Important Registration Notes
 
-- ⚠️ **Always use Asynchronous mode** to avoid blocking user operations
-- ⚠️ **Always register a PreImage** named "PreImage" for change detection
-- ⚠️ **Use Filtering Attributes** to optimize performance (select only trigger fields)
+- ⚠️ **Use the Configurator tool** for automatic deployment with proper stage/mode settings
+- ⚠️ **Parent steps use Asynchronous mode** to avoid blocking user operations
+- ⚠️ **Child steps use Synchronous PreOperation** to write values in the same transaction
+- ⚠️ **Always include `lookupFieldName`** in configuration for child relink support
 - ⚠️ **Test in a non-production environment first**
 
 ## Security Considerations

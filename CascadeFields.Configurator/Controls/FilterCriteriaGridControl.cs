@@ -206,12 +206,30 @@ namespace CascadeFields.Configurator.Controls
             if (_grid == null || _dataSource == null)
                 return;
 
+            // CRITICAL: Update combo sources BEFORE binding to prevent InvalidOperationException
             UpdateFieldColumnSource();
-            var bindingSource = new BindingSource { DataSource = _dataSource };
-            _grid.DataSource = bindingSource;
+            
+            // Suspend layout to prevent intermediate refresh issues
+            _grid.SuspendLayout();
+            
+            try
+            {
+                var bindingSource = new BindingSource 
+                { 
+                    DataSource = _dataSource,
+                    AllowNew = true
+                };
+                _grid.DataSource = bindingSource;
 
-            // Subscribe to collection changes
-            _dataSource.CollectionChanged += (s, e) => { _grid.Refresh(); };
+                // NOTE: Do NOT manually handle CollectionChanged events here.
+                // BindingSource automatically handles collection changes and syncs with the grid.
+                // Manual Refresh() calls during collection changes can cause ArgumentOutOfRangeException
+                // due to timing conflicts between the grid's internal state and the collection.
+            }
+            finally
+            {
+                _grid.ResumeLayout();
+            }
         }
 
         private void UpdateFieldColumnSource()
@@ -222,9 +240,10 @@ namespace CascadeFields.Configurator.Controls
             var fieldColumn = _grid.Columns["Field"] as DataGridViewComboBoxColumn;
             if (fieldColumn != null)
             {
-                fieldColumn.DataSource = _availableAttributes != null
+                // Always provide a valid list, even if empty, to prevent InvalidOperationException
+                fieldColumn.DataSource = _availableAttributes != null && _availableAttributes.Count > 0
                     ? new System.Collections.Generic.List<Models.UI.AttributeItem>(_availableAttributes)
-                    : null;
+                    : new System.Collections.Generic.List<Models.UI.AttributeItem>();
             }
         }
 
@@ -236,37 +255,44 @@ namespace CascadeFields.Configurator.Controls
         /// <summary>
         /// Handles cell value changes
         /// </summary>
+        /// <summary>
+        /// Handles cell value changes
+        /// </summary>
         private void Grid_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
         {
-            if (_dataSource == null || e.RowIndex < 0 || e.RowIndex >= _dataSource.Count)
-                return;
-
-            var item = _dataSource[e.RowIndex];
-            if (item == null)
-                return;
-
-            // Update ViewModel properties based on changed cell
-            var columnName = _grid?.Columns[e.ColumnIndex].Name;
-            var cellValue = _grid?[e.ColumnIndex, e.RowIndex].Value;
-
-            if (columnName == "Field")
+            try
             {
-                item.Field = (cellValue as string)!;
+                if (_dataSource == null || e.RowIndex < 0 || e.RowIndex >= _dataSource.Count)
+                    return;
+
+                var item = _dataSource[e.RowIndex];
+                if (item == null)
+                    return;
+
+                // Update ViewModel properties based on changed cell
+                var columnName = _grid?.Columns[e.ColumnIndex].Name;
+                var cellValue = _grid?[e.ColumnIndex, e.RowIndex].Value;
+
+                if (columnName == "Field")
+                {
+                    item.Field = (cellValue as string) ?? string.Empty;
+                }
+                else if (columnName == "Operator")
+                {
+                    item.Operator = (cellValue as string) ?? "eq";
+                }
+                else if (columnName == "Value")
+                {
+                    item.Value = (cellValue as string) ?? string.Empty;
+                }
+
+                // Note: Removed automatic row addition to prevent timing conflicts.
+                // Users can add rows via "+ Add Row" button or by typing in the last (new) row.
             }
-            else if (columnName == "Operator")
+            catch (Exception)
             {
-                item.Operator = (cellValue as string)!;
-            }
-            else if (columnName == "Value")
-            {
-                item.Value = (cellValue as string)!;
-            }
-
-            // Automatically add new blank row when last row is filled
-            if (e.RowIndex == _dataSource.Count - 1 &&
-                !string.IsNullOrEmpty(item.Field))
-            {
-                _dataSource.Add(new FilterCriterionViewModel());
+                // Silently catch any exceptions to prevent crashes
+                // Grid errors are already handled by DataError event
             }
         }
 

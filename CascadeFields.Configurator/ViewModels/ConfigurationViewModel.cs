@@ -36,7 +36,7 @@ namespace CascadeFields.Configurator.ViewModels
         private bool _isConnected;
         private string _connectionId = string.Empty;
         private bool _isLoading;
-        private string _statusMessage = "Ready. Connect to Dataverse and click 'Load Metadata'.";
+        private string _statusMessage = "Ready. Connect to Dataverse and click 'Reload Metadata'.";
         private SolutionItem? _selectedSolution;
         private EntityItem? _selectedParentEntity;
         private RelationshipTabViewModel? _selectedTab;
@@ -276,7 +276,7 @@ namespace CascadeFields.Configurator.ViewModels
             }
             else
             {
-                StatusMessage = "Ready. Click 'Load Metadata' to get started.";
+                StatusMessage = "Ready. Click 'Reload Metadata' to get started.";
             }
         }
 
@@ -539,8 +539,20 @@ namespace CascadeFields.Configurator.ViewModels
                     // Apply configuration to tab
                     tabVm.LoadFromModel(relatedEntity);
 
-                    RelationshipTabs.Add(tabVm);
-                    Debug.WriteLine($"Added tab for {relatedEntity.EntityName}");
+                    // CRITICAL: Check if this relationship tab already exists
+                    var existingTab = RelationshipTabs.FirstOrDefault(t => 
+                        t.ChildEntityLogicalName == relatedEntity.EntityName &&
+                        t.SelectedRelationship?.SchemaName == relatedEntity.RelationshipName);
+
+                    if (existingTab == null)
+                    {
+                        RelationshipTabs.Add(tabVm);
+                        Debug.WriteLine($"Added tab for {relatedEntity.EntityName}");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"Tab for {relatedEntity.EntityName} already exists, skipping duplicate.");
+                    }
                 }
 
                 // Apply global settings
@@ -615,11 +627,24 @@ namespace CascadeFields.Configurator.ViewModels
                     await tabVm.InitializeAsync();
                     tabVm.SelectedRelationship = relationship;
 
-                    RelationshipTabs.Add(tabVm);
-                    SelectedTab = tabVm;
+                    // CRITICAL: Check if this relationship is already in the tabs collection
+                    var existingTab = RelationshipTabs.FirstOrDefault(t => 
+                        t.ChildEntityLogicalName == relationship.ReferencingEntity &&
+                        t.SelectedRelationship?.SchemaName == relationship.SchemaName);
 
-                    UpdateJsonPreview();
-                    StatusMessage = $"Added relationship to {relationship.ReferencingEntity}.";
+                    if (existingTab == null)
+                    {
+                        RelationshipTabs.Add(tabVm);
+                        SelectedTab = tabVm;
+                        UpdateJsonPreview();
+                        StatusMessage = $"Added relationship to {relationship.ReferencingEntity}.";
+                    }
+                    else
+                    {
+                        // Tab already exists, select it instead
+                        SelectedTab = existingTab;
+                        StatusMessage = $"Relationship to {relationship.ReferencingEntity} already exists. Showing existing tab.";
+                    }
                 }
                 else
                 {
@@ -667,6 +692,14 @@ namespace CascadeFields.Configurator.ViewModels
                 var progress = new Progress<string>(msg => StatusMessage = msg);
                 var config = BuildConfigurationModel();
 
+                // Check plugin status before publishing
+                var pluginCheckResult = await CheckAndUpdatePluginIfNeededAsync(progress);
+                if (!pluginCheckResult)
+                {
+                    StatusMessage = "Publish cancelled.";
+                    return;
+                }
+
                 await _configurationService.PublishConfigurationAsync(
                     config,
                     progress,
@@ -683,6 +716,90 @@ namespace CascadeFields.Configurator.ViewModels
             finally
             {
                 IsLoading = false;
+            }
+        }
+
+        /// <summary>
+        /// Checks plugin status and prompts user to register/update if needed
+        /// </summary>
+        /// <returns>True if plugin is ready or user confirmed update, false if user cancelled</returns>
+        private async Task<bool> CheckAndUpdatePluginIfNeededAsync(IProgress<string> progress)
+        {
+            try
+            {
+                // Resolve plugin DLL path - it's in the CascadeFieldsConfigurator subfolder
+                var baseDir = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location)
+                    ?? AppDomain.CurrentDomain.BaseDirectory;
+                var assemblyPath = System.IO.Path.Combine(baseDir, 
+                    "CascadeFieldsConfigurator", "Assets", "DataversePlugin", "CascadeFields.Plugin.dll");
+
+                if (!System.IO.File.Exists(assemblyPath))
+                {
+                    progress.Report($"Warning: Plugin DLL not found at {assemblyPath}");
+                    var result = System.Windows.Forms.MessageBox.Show(
+                        $"Plugin DLL not found at:\n{assemblyPath}\n\nDo you want to continue publishing anyway?",
+                        "Plugin DLL Not Found",
+                        System.Windows.Forms.MessageBoxButtons.YesNo,
+                        System.Windows.Forms.MessageBoxIcon.Warning);
+                    return result == System.Windows.Forms.DialogResult.Yes;
+                }
+
+                // Check plugin status
+                var status = _configurationService.CheckPluginStatus(assemblyPath);
+
+                // Plugin not registered
+                if (!status.isRegistered)
+                {
+                    progress.Report("CascadeFields plugin is not registered.");
+                    var result = System.Windows.Forms.MessageBox.Show(
+                        $"The CascadeFields plugin is not registered in this environment.\n\nFile Version: {status.fileVersion ?? "Unknown"}\n\nWould you like to register it now?",
+                        "Register Plugin",
+                        System.Windows.Forms.MessageBoxButtons.YesNo,
+                        System.Windows.Forms.MessageBoxIcon.Question);
+
+                    if (result == System.Windows.Forms.DialogResult.Yes)
+                    {
+                        await _configurationService.UpdatePluginAssemblyAsync(assemblyPath, progress, System.Threading.CancellationToken.None, SelectedSolution?.Id);
+                        progress.Report("Plugin registered successfully.");
+                        return true;
+                    }
+                    return false;
+                }
+
+                // Plugin registered but needs update
+                if (status.needsUpdate)
+                {
+                    progress.Report($"Plugin version mismatch detected.");
+                    var result = System.Windows.Forms.MessageBox.Show(
+                        $"The registered plugin version differs from the file version:\n\nRegistered: {status.registeredVersion ?? "Unknown"}\nFile: {status.fileVersion ?? "Unknown"}\n\nWould you like to update the plugin now?",
+                        "Update Plugin",
+                        System.Windows.Forms.MessageBoxButtons.YesNo,
+                        System.Windows.Forms.MessageBoxIcon.Question);
+
+                    if (result == System.Windows.Forms.DialogResult.Yes)
+                    {
+                        await _configurationService.UpdatePluginAssemblyAsync(assemblyPath, progress, System.Threading.CancellationToken.None, SelectedSolution?.Id);
+                        progress.Report("Plugin updated successfully.");
+                        return true;
+                    }
+                    return false;
+                }
+
+                // Plugin is current
+                progress.Report($"Plugin is current (version {status.registeredVersion}).");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                progress.Report($"Error checking plugin status: {ex.Message}");
+                Debug.WriteLine($"Error in CheckAndUpdatePluginIfNeededAsync: {ex}");
+                
+                var result = System.Windows.Forms.MessageBox.Show(
+                    $"Error checking plugin status:\n{ex.Message}\n\nDo you want to continue publishing anyway?",
+                    "Plugin Check Error",
+                    System.Windows.Forms.MessageBoxButtons.YesNo,
+                    System.Windows.Forms.MessageBoxIcon.Warning);
+                return result == System.Windows.Forms.DialogResult.Yes;
             }
         }
 

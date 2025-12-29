@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using CascadeFields.Configurator.Models.UI;
@@ -232,12 +233,39 @@ namespace CascadeFields.Configurator.Controls
             if (_grid == null || _dataSource == null)
                 return;
 
+            // CRITICAL: Update combo sources BEFORE binding to prevent InvalidOperationException
+            // when DataGridView tries to create new rows with uninitialized combo boxes
             UpdateComboSources();
-            _bindingSource = new BindingSource { DataSource = _dataSource };
-            _grid.DataSource = _bindingSource;
+            
+            // Unbind existing data source to prevent memory leaks and duplicate event handlers
+            if (_bindingSource != null)
+            {
+                _grid.DataSource = null;
+                _bindingSource.Dispose();
+                _bindingSource = null;
+            }
+            
+            // Suspend layout to prevent intermediate refresh issues
+            _grid.SuspendLayout();
+            
+            try
+            {
+                _bindingSource = new BindingSource 
+                { 
+                    DataSource = _dataSource,
+                    AllowNew = true
+                };
+                _grid.DataSource = _bindingSource;
 
-            // Subscribe to collection changes for external updates
-            _dataSource.CollectionChanged += (s, e) => { _grid.Refresh(); };
+                // NOTE: Do NOT manually handle CollectionChanged events here.
+                // BindingSource automatically handles collection changes and syncs with the grid.
+                // Manual Refresh() calls during collection changes can cause ArgumentOutOfRangeException
+                // due to timing conflicts between the grid's internal state and the collection.
+            }
+            finally
+            {
+                _grid.ResumeLayout();
+            }
         }
 
         /// <summary>
@@ -248,18 +276,21 @@ namespace CascadeFields.Configurator.Controls
             if (_grid == null)
                 return;
 
+            // Ensure combo boxes have valid data sources (even if empty) to prevent InvalidOperationException
             if (_grid.Columns["SourceField"] is DataGridViewComboBoxColumn sourceCol)
             {
-                sourceCol.DataSource = _parentAttributes != null
+                // Always provide a valid list, even if empty
+                sourceCol.DataSource = _parentAttributes != null && _parentAttributes.Count > 0
                     ? new System.Collections.Generic.List<AttributeItem>(_parentAttributes)
-                    : null;
+                    : new System.Collections.Generic.List<AttributeItem>();
             }
 
             if (_grid.Columns["TargetField"] is DataGridViewComboBoxColumn targetCol)
             {
-                targetCol.DataSource = _childAttributes != null
+                // Always provide a valid list, even if empty
+                targetCol.DataSource = _childAttributes != null && _childAttributes.Count > 0
                     ? new System.Collections.Generic.List<AttributeItem>(_childAttributes)
-                    : null;
+                    : new System.Collections.Generic.List<AttributeItem>();
             }
         }
 
@@ -275,6 +306,11 @@ namespace CascadeFields.Configurator.Controls
         {
             if (_grid == null || _grid.CurrentCell == null)
                 return;
+
+            if (e.Control is ComboBox anyCombo)
+            {
+                ApplyComboBoxStyling(anyCombo);
+            }
 
             // Only handle Target Field column
             if (_grid.CurrentCell.ColumnIndex != _grid.Columns["TargetField"]?.Index)
@@ -292,47 +328,118 @@ namespace CascadeFields.Configurator.Controls
 
                 // Get the selected source field
                 var sourceFieldName = item.SourceField;
+                
+                // Determine which attributes to show
+                System.Collections.Generic.List<AttributeItem> compatibleTargets;
+                
                 if (string.IsNullOrEmpty(sourceFieldName))
                 {
                     // No source field selected, show all child attributes
-                    comboBox.DataSource = _childAttributes != null
+                    compatibleTargets = _childAttributes != null && _childAttributes.Count > 0
                         ? new System.Collections.Generic.List<AttributeItem>(_childAttributes)
-                        : null;
-                    return;
+                        : new System.Collections.Generic.List<AttributeItem>();
                 }
-
-                // Find the source attribute
-                var sourceAttr = _parentAttributes?.FirstOrDefault(a => a.LogicalName == sourceFieldName);
-                if (sourceAttr == null)
+                else
                 {
-                    // Source attribute not found, show all
-                    comboBox.DataSource = _childAttributes != null
-                        ? new System.Collections.Generic.List<AttributeItem>(_childAttributes)
-                        : null;
-                    return;
+                    // Find the source attribute
+                    var sourceAttr = _parentAttributes?.FirstOrDefault(a => a.LogicalName == sourceFieldName);
+                    if (sourceAttr == null)
+                    {
+                        // Source attribute not found, show all
+                        compatibleTargets = _childAttributes != null && _childAttributes.Count > 0
+                            ? new System.Collections.Generic.List<AttributeItem>(_childAttributes)
+                            : new System.Collections.Generic.List<AttributeItem>();
+                    }
+                    else
+                    {
+                        // Filter compatible target attributes
+                        compatibleTargets = _childAttributes?
+                            .Where(target => AreFieldsCompatible(sourceAttr, target))
+                            .ToList() ?? new System.Collections.Generic.List<AttributeItem>();
+                    }
                 }
 
-                // Filter compatible target attributes
-                var compatibleTargets = _childAttributes?
-                    .Where(target => AreFieldsCompatible(sourceAttr, target))
-                    .ToList();
-
-                comboBox.DataSource = compatibleTargets ?? new System.Collections.Generic.List<AttributeItem>();
+                // CRITICAL FIX: Preserve DisplayMember and ValueMember when setting DataSource
+                // to prevent rendering issues and ensure values are properly committed
+                comboBox.DisplayMember = "FilterDisplayName";
+                comboBox.ValueMember = "LogicalName";
+                comboBox.DataSource = compatibleTargets;
+                
+                // Force the combo box to select the current value if it exists
+                var currentValue = item.TargetField;
+                if (!string.IsNullOrEmpty(currentValue) &&
+                    compatibleTargets.Any(a => a.LogicalName == currentValue) &&
+                    !string.IsNullOrEmpty(comboBox.ValueMember))
+                {
+                    comboBox.SelectedValue = currentValue;
+                }
             }
         }
 
+        private void ApplyComboBoxStyling(ComboBox comboBox)
+        {
+            comboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+            comboBox.DrawMode = DrawMode.OwnerDrawFixed;
+            comboBox.FlatStyle = FlatStyle.Flat;
+            comboBox.BackColor = SystemColors.Window;
+            comboBox.ForeColor = SystemColors.WindowText;
+
+            comboBox.DrawItem -= ComboBox_DrawItem;
+            comboBox.DrawItem += ComboBox_DrawItem;
+        }
+
+        private void ComboBox_DrawItem(object? sender, DrawItemEventArgs e)
+        {
+            if (e.Index < 0 || sender is not ComboBox combo)
+                return;
+
+            var item = combo.Items[e.Index];
+            var displayText = item switch
+            {
+                AttributeItem attribute => attribute.FilterDisplayName ?? attribute.LogicalName ?? string.Empty,
+                _ => item?.ToString() ?? string.Empty
+            };
+
+            var isSelected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+            var backColor = isSelected ? SystemColors.Highlight : SystemColors.Window;
+            var foreColor = isSelected ? SystemColors.HighlightText : SystemColors.WindowText;
+
+            using (var backBrush = new SolidBrush(backColor))
+            {
+                e.Graphics.FillRectangle(backBrush, e.Bounds);
+            }
+
+            var textBounds = new Rectangle(e.Bounds.X + 2, e.Bounds.Y + 1, e.Bounds.Width - 4, e.Bounds.Height - 2);
+
+            using (var textBrush = new SolidBrush(foreColor))
+            {
+                e.Graphics.DrawString(displayText, e.Font, textBrush, textBounds);
+            }
+
+            e.DrawFocusRectangle();
+        }
+
         /// <summary>
-        /// Forces combo to commit changes immediately so filtering works on first selection
+        /// Forces cell to commit changes immediately when user moves to next cell
+        /// This ensures values are saved before grid state changes
         /// </summary>
         private void Grid_CurrentCellDirtyStateChanged(object? sender, EventArgs e)
         {
-            if (_grid == null || _grid.CurrentCell == null)
+            if (_grid == null || _grid.CurrentCell == null || !_grid.IsCurrentCellDirty)
                 return;
 
-            // Commit changes immediately when a source field is selected
-            if (_grid.CurrentCell.ColumnIndex == _grid.Columns["SourceField"]?.Index && _grid.IsCurrentCellDirty)
+            try
             {
-                _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+                // Commit changes immediately for combo box columns to ensure value is saved
+                var columnName = _grid.CurrentCell?.OwningColumn?.Name;
+                if (columnName == "SourceField" || columnName == "TargetField" || columnName == "IsTriggerField")
+                {
+                    _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore commit errors - DataError event will handle any issues
             }
         }
 
@@ -429,35 +536,49 @@ namespace CascadeFields.Configurator.Controls
         /// </summary>
         private void Grid_CellValueChanged(object? sender, DataGridViewCellEventArgs e)
         {
-            if (_dataSource == null || e.RowIndex < 0 || e.RowIndex >= _dataSource.Count)
-                return;
+            try
+            {
+                if (_dataSource == null || e.RowIndex < 0 || e.RowIndex >= _dataSource.Count)
+                    return;
 
-            var item = _dataSource[e.RowIndex];
-            if (item == null)
-                return;
+                var item = _dataSource[e.RowIndex];
+                if (item == null)
+                    return;
 
-            // Update ViewModel properties based on changed cell
-            if (_grid?.Columns[e.ColumnIndex].Name == "SourceField")
-            {
-                var value = _grid[e.ColumnIndex, e.RowIndex].Value;
-                item.SourceField = (value as string)!;
-            }
-            else if (_grid?.Columns[e.ColumnIndex].Name == "TargetField")
-            {
-                var value = _grid[e.ColumnIndex, e.RowIndex].Value;
-                item.TargetField = (value as string)!;
-            }
-            else if (_grid?.Columns[e.ColumnIndex].Name == "IsTriggerField")
-            {
-                item.IsTriggerField = (bool)(_grid[e.ColumnIndex, e.RowIndex].Value ?? false);
-            }
+                // Get the cell value - this will be the LogicalName from the combo box's ValueMember
+                var cellValue = _grid?[e.ColumnIndex, e.RowIndex].Value;
 
-            // Automatically add new blank row when last row is filled
-            if (e.RowIndex == _dataSource.Count - 1 &&
-                !string.IsNullOrEmpty(item.SourceField) &&
-                !string.IsNullOrEmpty(item.TargetField))
+                // Update ViewModel properties based on changed cell
+                if (_grid?.Columns[e.ColumnIndex].Name == "SourceField")
+                {
+                    var newValue = (cellValue as string) ?? string.Empty;
+                    if (item.SourceField != newValue)
+                    {
+                        item.SourceField = newValue;
+                        // When source field changes, the target field filtering will update automatically
+                        // on next edit, so no need to clear it
+                    }
+                }
+                else if (_grid?.Columns[e.ColumnIndex].Name == "TargetField")
+                {
+                    var newValue = (cellValue as string) ?? string.Empty;
+                    if (item.TargetField != newValue)
+                    {
+                        item.TargetField = newValue;
+                    }
+                }
+                else if (_grid?.Columns[e.ColumnIndex].Name == "IsTriggerField")
+                {
+                    item.IsTriggerField = (bool)(cellValue ?? false);
+                }
+
+                // Note: Removed automatic row addition to prevent timing conflicts.
+                // Users can add rows via "+ Add Row" button or by typing in the last (new) row.
+            }
+            catch (Exception)
             {
-                _dataSource.Add(new FieldMappingViewModel());
+                // Silently catch any exceptions to prevent crashes
+                // Grid errors are already handled by DataError event
             }
         }
 

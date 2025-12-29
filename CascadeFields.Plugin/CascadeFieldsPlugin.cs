@@ -8,7 +8,8 @@ namespace CascadeFields.Plugin
 {
     /// <summary>
     /// Plugin that cascades field values from a parent record to related child records
-    /// Registers on: Update message, Post-operation, Asynchronous
+    /// Parent-side: Register on Update, Post-operation (async recommended)
+    /// Child-side: Register on Create (Pre-operation) and Update (Pre-operation) filtered on the configured lookup field
     /// </summary>
     public class CascadeFieldsPlugin : IPlugin
     {
@@ -44,10 +45,10 @@ namespace CascadeFields.Plugin
                 tracer.Info("=== Plugin Execution Started ===");
                 tracer.LogContextDetails(context);
 
-                // Validate context
-                if (!ValidateContext(context, tracer))
+                // Prevent runaway recursion
+                if (context.Depth > 2)
                 {
-                    tracer.Info("Context validation failed, skipping execution");
+                    tracer.Warning($"Execution depth {context.Depth} exceeds maximum (2). Stopping to prevent infinite loop.");
                     return;
                 }
 
@@ -59,7 +60,7 @@ namespace CascadeFields.Plugin
                 tracer.SetTracingEnabled(config.EnableTracing);
                 tracer.Debug($"Tracing enabled: {config.EnableTracing}");
 
-                // Check if configuration applies to this entity
+                // Check if configuration applies to this entity (parent or child)
                 if (!configManager.IsConfigurationApplicable(config, context.PrimaryEntityName))
                 {
                     tracer.Info("Configuration not applicable to this entity");
@@ -79,16 +80,43 @@ namespace CascadeFields.Plugin
                 // Initialize cascade service
                 var cascadeService = new CascadeService(service, tracer);
 
-                // Check if any trigger fields changed
-                if (!cascadeService.HasTriggerFieldChanged(target, preImage, config))
+                // Determine execution mode based on entity + message
+                if (context.PrimaryEntityName.Equals(config.ParentEntity, StringComparison.OrdinalIgnoreCase)
+                    && context.MessageName.Equals("Update", StringComparison.OrdinalIgnoreCase))
                 {
-                    tracer.Info("No trigger fields changed, skipping cascade");
-                    return;
-                }
+                    // Parent-side cascade: ensure post-op async registration recommended
+                    if (context.Stage != 40)
+                    {
+                        tracer.Warning($"Parent update detected on unexpected stage {context.Stage}. Recommended: 40 (Post-operation)");
+                    }
 
-                // Perform cascade operation
-                tracer.Info("Beginning cascade operation");
-                cascadeService.CascadeFieldValues(target, preImage, config);
+                    // Check if any trigger fields changed
+                    if (!cascadeService.HasTriggerFieldChanged(target, preImage, config))
+                    {
+                        tracer.Info("No trigger fields changed, skipping cascade");
+                        return;
+                    }
+
+                    // Perform cascade operation to children
+                    tracer.Info("Beginning cascade operation to related children");
+                    cascadeService.CascadeFieldValues(target, preImage, config);
+                }
+                else if (IsChildEntity(config, context.PrimaryEntityName) &&
+                         (context.MessageName.Equals("Create", StringComparison.OrdinalIgnoreCase) ||
+                          context.MessageName.Equals("Update", StringComparison.OrdinalIgnoreCase)))
+                {
+                    // Child-side handling: copy mapped values from parent → child when created or relinked
+                    if (context.Stage != 20)
+                    {
+                        tracer.Warning($"Child handling on stage {context.Stage}. Recommended: 20 (Pre-operation)");
+                    }
+
+                    cascadeService.ApplyParentValuesToChildOnAttachOrCreate(context, target, preImage, config);
+                }
+                else
+                {
+                    tracer.Info("No applicable execution mode for this context.");
+                }
 
                 tracer.Info("=== Plugin Execution Completed Successfully ===");
             }
@@ -108,27 +136,17 @@ namespace CascadeFields.Plugin
         /// <summary>
         /// Validates the execution context
         /// </summary>
-        private bool ValidateContext(IPluginExecutionContext context, PluginTracer tracer)
+        private bool IsChildEntity(CascadeConfiguration config, string entityName)
         {
-            if (context.MessageName != "Update")
+            if (config?.RelatedEntities == null) return false;
+            foreach (var r in config.RelatedEntities)
             {
-                tracer.Warning($"Plugin registered on incorrect message: {context.MessageName}. Expected: Update");
-                return false;
+                if (r.EntityName.Equals(entityName, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
             }
-
-            if (context.Stage != 40) // Post-operation
-            {
-                tracer.Warning($"Plugin registered on incorrect stage: {context.Stage}. Expected: 40 (Post-operation)");
-                return false;
-            }
-
-            if (context.Depth > 2)
-            {
-                tracer.Warning($"Execution depth {context.Depth} exceeds maximum (2). Stopping to prevent infinite loop.");
-                return false;
-            }
-
-            return true;
+            return false;
         }
 
         /// <summary>
