@@ -31,12 +31,6 @@ namespace CascadeFields.Configurator.Controls
         private ComboBox cmbParentEntity;
         private TextBox txtLog;
         private TextBox txtJsonPreview;
-        private DataGridView gridMappings;
-        private DataGridViewComboBoxColumn colSourceField;
-        private DataGridViewComboBoxColumn colTargetField;
-        private DataGridViewCheckBoxColumn colTrigger;
-        private DataGridViewButtonColumn colDelete;
-        private FilterCriteriaControl filterControl;
         private CheckBox chkEnableTracing;
         private CheckBox chkIsActive;
         private Label lblStatus;
@@ -81,15 +75,9 @@ namespace CascadeFields.Configurator.Controls
             splitContainerRight = new SplitContainer();
             tabControlRightUpper = new TabControl();
             panelRightLower = new Panel();
-            filterControl = new FilterCriteriaControl();
             chkEnableTracing = new CheckBox();
             chkIsActive = new CheckBox();
             lblStatus = new Label();
-            gridMappings = new DataGridView();
-            colSourceField = new DataGridViewComboBoxColumn();
-            colTargetField = new DataGridViewComboBoxColumn();
-            colTrigger = new DataGridViewCheckBoxColumn();
-            colDelete = new DataGridViewButtonColumn();
             ribbonPanel.SuspendLayout();
             ((ISupportInitialize)splitContainerMain).BeginInit();
             splitContainerMain.Panel1.SuspendLayout();
@@ -109,7 +97,6 @@ namespace CascadeFields.Configurator.Controls
             splitContainerRight.SuspendLayout();
             tabControlRightUpper.SuspendLayout();
             panelRightLower.SuspendLayout();
-            ((ISupportInitialize)gridMappings).BeginInit();
             SuspendLayout();
             // 
             // ribbonPanel
@@ -208,7 +195,16 @@ namespace CascadeFields.Configurator.Controls
             // Add tab control directly below the fixed header (no splitter needed for left side)
             tabControlLeftLower.Dock = DockStyle.Fill;
             
+            // Status label at bottom of left panel
+            lblStatus.Dock = DockStyle.Bottom;
+            lblStatus.Text = "Ready";
+            lblStatus.AutoSize = false;
+            lblStatus.Height = 25;
+            lblStatus.Padding = new Padding(4);
+            lblStatus.BorderStyle = BorderStyle.FixedSingle;
+            
             leftPanel.Controls.Add(tabControlLeftLower);
+            leftPanel.Controls.Add(lblStatus);
             leftPanel.Controls.Add(fixedLayout);
             
             splitContainerMain.Panel1.Controls.Add(leftPanel);
@@ -272,7 +268,9 @@ namespace CascadeFields.Configurator.Controls
             // 
             splitContainerRight.Dock = DockStyle.Fill;
             splitContainerRight.Orientation = Orientation.Horizontal;
-            splitContainerRight.SplitterDistance = 420;
+            splitContainerRight.SplitterWidth = 5;
+            splitContainerRight.FixedPanel = FixedPanel.Panel2;
+            splitContainerRight.Panel2MinSize = 40;
             splitContainerRight.Panel1.Controls.Add(tabControlRightUpper);
             splitContainerRight.Panel2.Controls.Add(panelRightLower);
 
@@ -282,7 +280,10 @@ namespace CascadeFields.Configurator.Controls
             tabControlRightUpper.Dock = DockStyle.Fill;
             tabControlRightUpper.DrawMode = TabDrawMode.OwnerDrawFixed;
             tabControlRightUpper.SizeMode = TabSizeMode.Fixed;
-            tabControlRightUpper.ItemSize = new Size(180, 40);
+                tabControlRightUpper.ItemSize = new Size(180, 75);
+                tabControlRightUpper.Padding = new System.Drawing.Point(0, 0);
+            tabControlRightUpper.Alignment = TabAlignment.Top;
+            tabControlRightUpper.DrawItem += TabControlRightUpper_DrawItem;
             // Child entity tabs will be added dynamically
 
             // 
@@ -290,20 +291,23 @@ namespace CascadeFields.Configurator.Controls
             // 
             panelRightLower.Dock = DockStyle.Fill;
             panelRightLower.Padding = new Padding(8);
-            panelRightLower.Controls.Add(lblStatus);
-            panelRightLower.Controls.Add(filterControl);
-            panelRightLower.Controls.Add(chkIsActive);
-            panelRightLower.Controls.Add(chkEnableTracing);
-
-            // 
-            // lblStatus
-            // 
-            lblStatus.Dock = DockStyle.Bottom;
-            lblStatus.Text = "Ready";
-            lblStatus.AutoSize = true;
-            lblStatus.Height = 20;
-            lblStatus.Padding = new Padding(4);
-            lblStatus.BorderStyle = BorderStyle.FixedSingle;
+            
+            // Create layout for checkboxes: EnableTracing on left, IsActive on right
+            var checkboxLayout = new TableLayoutPanel
+            {
+                ColumnCount = 2,
+                RowCount = 1,
+                Dock = DockStyle.Bottom,
+                AutoSize = true,
+                Height = 30
+            };
+            checkboxLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70F));
+            checkboxLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30F));
+            checkboxLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+            checkboxLayout.Controls.Add(chkEnableTracing, 0, 0);
+            checkboxLayout.Controls.Add(chkIsActive, 1, 0);
+            
+            panelRightLower.Controls.Add(checkboxLayout);
 
             // 
             // chkIsActive
@@ -322,40 +326,6 @@ namespace CascadeFields.Configurator.Controls
             chkEnableTracing.Checked = true;
             chkEnableTracing.Height = 30;
             chkEnableTracing.Padding = new Padding(4);
-
-            // 
-            // filterControl
-            // 
-            filterControl.Dock = DockStyle.Fill;
-
-            // 
-            // gridMappings
-            // 
-            gridMappings.Dock = DockStyle.Fill;
-            gridMappings.AllowUserToAddRows = false;
-            gridMappings.AutoGenerateColumns = false;
-            gridMappings.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            gridMappings.RowHeadersVisible = false;
-            gridMappings.Columns.AddRange(new DataGridViewColumn[] { colSourceField, colTargetField, colTrigger, colDelete });
-
-            colSourceField.HeaderText = "Source: Parent Field";
-            colSourceField.FillWeight = 42F;
-            colSourceField.DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox;
-            colSourceField.DataPropertyName = "SourceField";
-
-            colTargetField.HeaderText = "Destination: Child Field";
-            colTargetField.FillWeight = 42F;
-            colTargetField.DisplayStyle = DataGridViewComboBoxDisplayStyle.ComboBox;
-            colTargetField.DataPropertyName = "TargetField";
-
-            colTrigger.HeaderText = "Trigger";
-            colTrigger.DataPropertyName = "IsTriggerField";
-            colTrigger.FillWeight = 8F;
-            
-            colDelete.HeaderText = "";
-            colDelete.Text = "✖";
-            colDelete.UseColumnTextForButtonValue = true;
-            colDelete.FillWeight = 8F;
 
             // 
             // CascadeFieldsConfiguratorControl
@@ -388,7 +358,6 @@ namespace CascadeFields.Configurator.Controls
             splitContainerRight.ResumeLayout(false);
             tabControlRightUpper.ResumeLayout(false);
             panelRightLower.ResumeLayout(false);
-            ((ISupportInitialize)gridMappings).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }

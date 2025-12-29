@@ -44,7 +44,13 @@ namespace CascadeFields.Configurator.ViewModels
         public RelationshipItem? SelectedRelationship
         {
             get => _selectedRelationship;
-            set => SetProperty(ref _selectedRelationship, value);
+            set
+            {
+                if (SetProperty(ref _selectedRelationship, value))
+                {
+                    UpdateTabName();
+                }
+            }
         }
 
         /// <summary>
@@ -99,6 +105,8 @@ namespace CascadeFields.Configurator.ViewModels
             // Add initial empty rows
             FieldMappings.Add(new FieldMappingViewModel());
             FilterCriteria.Add(new FilterCriterionViewModel());
+
+            UpdateTabName();
         }
 
         /// <summary>
@@ -169,6 +177,33 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
+        /// Builds a multi-line tab title with child display name, lookup field, and schema name
+        /// </summary>
+        private void UpdateTabName()
+        {
+            var entityDisplay = SelectedRelationship?.ChildEntityDisplayName ?? ChildEntityLogicalName;
+
+            var lookupDisplay = SelectedRelationship?.LookupFieldDisplayName;
+            var schemaDisplay = SelectedRelationship?.SchemaName;
+
+            // Build three-line title: Entity (bold/larger), Lookup, Schema
+            var title = entityDisplay;
+            if (!string.IsNullOrWhiteSpace(lookupDisplay))
+            {
+                title += Environment.NewLine + lookupDisplay;
+            }
+            if (!string.IsNullOrWhiteSpace(schemaDisplay))
+            {
+                title += Environment.NewLine + schemaDisplay;
+            }
+
+            if (!string.Equals(title, TabName, StringComparison.Ordinal))
+            {
+                TabName = title;
+            }
+        }
+
+        /// <summary>
         /// Loads configuration from a domain model
         /// </summary>
         public void LoadFromModel(RelatedEntityConfigModel model)
@@ -198,9 +233,10 @@ namespace CascadeFields.Configurator.ViewModels
             }
 
             // Load filter criteria
-            if (!string.IsNullOrWhiteSpace(model.FilterCriteria))
+            var filterCriteria = model.FilterCriteria;
+            if (!string.IsNullOrWhiteSpace(filterCriteria))
             {
-                var filters = model.FilterCriteria.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                var filters = filterCriteria!.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
                 foreach (var filter in filters)
                 {
                     var criterion = FilterCriterionModel.FromFilterString(filter);

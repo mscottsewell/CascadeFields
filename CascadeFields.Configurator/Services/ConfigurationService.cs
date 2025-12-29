@@ -41,6 +41,7 @@ namespace CascadeFields.Configurator.Services
 
                 var results = _service.RetrieveMultiple(query);
                 var configured = new List<ConfiguredRelationship>();
+                var metadataService = new MetadataService(_service);
 
                 foreach (var step in results.Entities)
                 {
@@ -60,11 +61,33 @@ namespace CascadeFields.Configurator.Services
 
                         foreach (var related in config.RelatedEntities)
                         {
+                            // Resolve friendly display names from metadata
+                            string childDisplay = related.EntityName;
+                            string lookupDisplay = related.LookupFieldName;
+                            try
+                            {
+                                var childMeta = metadataService.GetEntityMetadataAsync(related.EntityName).Result;
+                                childDisplay = childMeta?.DisplayName?.UserLocalizedLabel?.Label ?? related.EntityName;
+
+                                if (!string.IsNullOrWhiteSpace(related.LookupFieldName) && childMeta?.Attributes != null)
+                                {
+                                    var attr = childMeta.Attributes.FirstOrDefault(a => a.LogicalName == related.LookupFieldName);
+                                    lookupDisplay = attr?.DisplayName?.UserLocalizedLabel?.Label ?? related.LookupFieldName;
+                                }
+                            }
+                            catch
+                            {
+                                // Ignore metadata resolution errors and fall back to logical names
+                            }
+
                             configured.Add(new ConfiguredRelationship
                             {
                                 ParentEntity = config.ParentEntity,
                                 ChildEntity = related.EntityName,
+                                ChildEntityDisplayName = childDisplay,
                                 RelationshipName = related.RelationshipName,
+                                LookupFieldDisplayName = lookupDisplay,
+                                LookupFieldName = related.LookupFieldName,
                                 Configuration = config,
                                 RawJson = rawConfig
                             });

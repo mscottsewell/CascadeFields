@@ -20,6 +20,11 @@ namespace CascadeFields.Configurator.Models.UI
         public string DisplayName { get; set; } = string.Empty;
         public EntityMetadata Metadata { get; set; } = default!;
 
+        // Display helper used in combos: Display Name (schema)
+        public string DisplayNameWithSchema => string.IsNullOrWhiteSpace(DisplayName)
+            ? LogicalName
+            : $"{DisplayName} ({LogicalName})";
+
         public override string ToString() => string.IsNullOrWhiteSpace(DisplayName)
             ? LogicalName
             : $"{DisplayName} ({LogicalName})";
@@ -100,7 +105,10 @@ namespace CascadeFields.Configurator.Models.UI
     {
         public string ParentEntity { get; set; } = string.Empty;
         public string ChildEntity { get; set; } = string.Empty;
+        public string ChildEntityDisplayName { get; set; } = string.Empty;
         public string RelationshipName { get; set; } = string.Empty;
+        public string LookupFieldDisplayName { get; set; } = string.Empty;
+        public string LookupFieldName { get; set; } = string.Empty;
         public string DisplayName => $"{ParentEntity} → {ChildEntity} ({RelationshipName})";
         public CascadeConfigurationModel? Configuration { get; set; }
         public string? RawJson { get; set; }

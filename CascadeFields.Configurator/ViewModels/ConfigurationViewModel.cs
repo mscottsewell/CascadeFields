@@ -1,9 +1,11 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using System.Windows.Forms;
 using CascadeFields.Configurator.Infrastructure.Commands;
 using CascadeFields.Configurator.Models.Domain;
 using CascadeFields.Configurator.Models.Session;
@@ -28,6 +30,8 @@ namespace CascadeFields.Configurator.ViewModels
         private readonly IMetadataService _metadataService;
         private readonly IConfigurationService _configurationService;
         private readonly ISettingsRepository _settingsRepository;
+
+        public IConfigurationService ConfigurationService => _configurationService;
 
         private bool _isConnected;
         private string _connectionId = string.Empty;
@@ -138,7 +142,7 @@ namespace CascadeFields.Configurator.ViewModels
         public string StatusMessage
         {
             get => _statusMessage;
-            private set => SetProperty(ref _statusMessage, value);
+            set => SetProperty(ref _statusMessage, value);
         }
 
         /// <summary>
@@ -412,7 +416,9 @@ namespace CascadeFields.Configurator.ViewModels
             {
                 var entities = await _metadataService.GetSolutionEntitiesAsync(SelectedSolution.UniqueName);
                 ParentEntities.Clear();
-                foreach (var entity in entities.OrderBy(e => e.DisplayName))
+                foreach (var entity in entities.OrderBy(
+                             e => e.DisplayName?.UserLocalizedLabel?.Label ?? e.LogicalName,
+                             StringComparer.OrdinalIgnoreCase))
                 {
                     var item = new EntityItem
                     {
@@ -474,14 +480,34 @@ namespace CascadeFields.Configurator.ViewModels
         /// <summary>
         /// Applies a configuration from JSON
         /// </summary>
-        public async Task ApplyConfigurationAsync(string json)
+        public async Task ApplyConfigurationAsync(string? json)
         {
-            if (SelectedParentEntity == null)
-                throw new InvalidOperationException("Parent entity not selected");
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                StatusMessage = "No configuration found to apply.";
+                return;
+            }
 
             try
             {
-                var config = CascadeConfigurationModel.FromJson(json);
+                var config = CascadeConfigurationModel.FromJson(json!);
+
+                // If parent entity not selected, try to select it from config
+                if (SelectedParentEntity == null || SelectedParentEntity.LogicalName != config.ParentEntity)
+                {
+                    var parentEntity = ParentEntities.FirstOrDefault(e => e.LogicalName == config.ParentEntity);
+                    if (parentEntity != null)
+                    {
+                        SelectedParentEntity = parentEntity;
+                        // Wait for async entity change to complete
+                        await Task.Delay(500);
+                    }
+                    else
+                    {
+                        StatusMessage = $"Parent entity '{config.ParentEntity}' not found in current solution.";
+                        return;
+                    }
+                }
 
                 // Clear existing tabs
                 RelationshipTabs.Clear();
@@ -491,16 +517,30 @@ namespace CascadeFields.Configurator.ViewModels
                 {
                     var tabVm = new RelationshipTabViewModel(
                         _metadataService,
-                        SelectedParentEntity.LogicalName,
+                        config.ParentEntity,
                         relatedEntity.EntityName);
 
                     // Load metadata for this tab
                     await tabVm.InitializeAsync();
 
+                    // Find and set the matching relationship
+                    if (!string.IsNullOrWhiteSpace(relatedEntity.RelationshipName))
+                    {
+                        var relationships = await _metadataService.GetChildRelationshipsAsync(config.ParentEntity);
+                        var matchingRelationship = relationships
+                            .FirstOrDefault(r => r.SchemaName == relatedEntity.RelationshipName);
+                        if (matchingRelationship != null)
+                        {
+                            tabVm.SelectedRelationship = matchingRelationship;
+                            Debug.WriteLine($"Set relationship {matchingRelationship.SchemaName} for {relatedEntity.EntityName}");
+                        }
+                    }
+
                     // Apply configuration to tab
                     tabVm.LoadFromModel(relatedEntity);
 
                     RelationshipTabs.Add(tabVm);
+                    Debug.WriteLine($"Added tab for {relatedEntity.EntityName}");
                 }
 
                 // Apply global settings
@@ -515,6 +555,9 @@ namespace CascadeFields.Configurator.ViewModels
                 StatusMessage = $"Error applying configuration: {ex.Message}";
                 Debug.WriteLine($"Error in ApplyConfigurationAsync: {ex}");
             }
+            
+            // Force UI refresh
+            OnPropertyChanged(nameof(RelationshipTabs));
         }
 
         /// <summary>
@@ -531,33 +574,57 @@ namespace CascadeFields.Configurator.ViewModels
             try
             {
                 // Load relationships for the parent entity
-                var relationships = await _metadataService
+                var allRelationships = await _metadataService
                     .GetChildRelationshipsAsync(SelectedParentEntity.LogicalName);
 
-                if (relationships.Count == 0)
+                if (allRelationships.Count == 0)
                 {
                     StatusMessage = "No child relationships available for this entity.";
                     return;
                 }
 
-                // For now, create a tab for the first relationship
-                // In the full implementation, this should open a picker dialog
-                var relationship = relationships.First();
+                // Filter out relationships that are already configured
+                var configuredEntityNames = new HashSet<string>(
+                    RelationshipTabs.Select(t => t.ChildEntityLogicalName),
+                    StringComparer.OrdinalIgnoreCase);
 
-                var tabVm = new RelationshipTabViewModel(
-                    _metadataService,
-                    SelectedParentEntity.LogicalName,
-                    relationship.ReferencingEntity);
+                var availableRelationships = allRelationships
+                    .Where(r => !configuredEntityNames.Contains(r.ReferencingEntity))
+                    .ToList();
 
-                await tabVm.InitializeAsync();
-                tabVm.SelectedRelationship = relationship;
-                tabVm.TabName = relationship.DisplayText;
+                if (availableRelationships.Count == 0)
+                {
+                    StatusMessage = "All available relationships are already configured.";
+                    return;
+                }
 
-                RelationshipTabs.Add(tabVm);
-                SelectedTab = tabVm;
+                IsLoading = false;
 
-                UpdateJsonPreview();
-                StatusMessage = $"Added relationship to {relationship.ReferencingEntity}.";
+                // Show picker dialog
+                var picker = new Dialogs.RelationshipPickerDialog(availableRelationships);
+                if (picker.ShowDialog() == DialogResult.OK && picker.SelectedRelationship != null)
+                {
+                    IsLoading = true;
+                    var relationship = picker.SelectedRelationship;
+
+                    var tabVm = new RelationshipTabViewModel(
+                        _metadataService,
+                        SelectedParentEntity.LogicalName,
+                        relationship.ReferencingEntity);
+
+                    await tabVm.InitializeAsync();
+                    tabVm.SelectedRelationship = relationship;
+
+                    RelationshipTabs.Add(tabVm);
+                    SelectedTab = tabVm;
+
+                    UpdateJsonPreview();
+                    StatusMessage = $"Added relationship to {relationship.ReferencingEntity}.";
+                }
+                else
+                {
+                    StatusMessage = "Add relationship cancelled.";
+                }
             }
             catch (Exception ex)
             {

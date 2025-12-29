@@ -15,7 +15,6 @@ function Write-Info($message) {
 
 function Ensure-NugetExe {
     $minimumNugetVersion = [Version]"5.10.0"
-    $nugetExe = $null
 
     $nuget = Get-Command nuget.exe -ErrorAction SilentlyContinue
     if ($nuget) {

@@ -1,7 +1,10 @@
 using System;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.Linq;
 using System.Windows.Forms;
 using CascadeFields.Configurator.ViewModels;
+using CascadeFields.Configurator.Models.UI;
 
 namespace CascadeFields.Configurator.Controls
 {
@@ -44,15 +47,19 @@ namespace CascadeFields.Configurator.Controls
             get => _availableAttributes;
             set
             {
-                _availableAttributes = value;
-                if (_grid != null && _grid.Columns.Count > 0)
+                if (_availableAttributes != null)
                 {
-                    var fieldColumn = _grid.Columns["Field"] as DataGridViewComboBoxColumn;
-                    if (fieldColumn != null && value != null)
-                    {
-                        fieldColumn.DataSource = new System.Collections.Generic.List<Models.UI.AttributeItem>(value);
-                    }
+                    _availableAttributes.CollectionChanged -= Attributes_CollectionChanged;
                 }
+
+                _availableAttributes = value;
+
+                if (_availableAttributes != null)
+                {
+                    _availableAttributes.CollectionChanged += Attributes_CollectionChanged;
+                }
+
+                UpdateFieldColumnSource();
             }
         }
 
@@ -61,18 +68,90 @@ namespace CascadeFields.Configurator.Controls
         /// </summary>
         private void CreateGrid()
         {
+            // Create a container with toolbar and grid
+            var container = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0) };
+
+            // Create toolbar
+            var toolbar = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top,
+                Height = 28,
+                AutoSize = false,
+                Padding = new Padding(2),
+                Margin = new Padding(0)
+            };
+
+            var btnAdd = new Button
+            {
+                Text = "+ Add Row",
+                AutoSize = true,
+                Margin = new Padding(2)
+            };
+            btnAdd.Click += (s, e) =>
+            {
+                var bindingSource = _grid?.DataSource as BindingSource;
+                if (bindingSource != null)
+                {
+                    bindingSource.Add(new FilterCriterionViewModel());
+                }
+                else if (_dataSource != null)
+                {
+                    _dataSource.Add(new FilterCriterionViewModel());
+                }
+            };
+
+            var btnDelete = new Button
+            {
+                Text = "- Delete Row",
+                AutoSize = true,
+                Margin = new Padding(2)
+            };
+            btnDelete.Click += (s, e) =>
+            {
+                if (_grid?.SelectedRows.Count > 0)
+                {
+                    var rowsToDelete = new System.Collections.Generic.List<int>();
+                    foreach (DataGridViewRow row in _grid.SelectedRows)
+                    {
+                        if (row.IsNewRow)
+                            continue;
+                        rowsToDelete.Add(row.Index);
+                    }
+
+                    rowsToDelete.Sort((a, b) => b.CompareTo(a));
+                    foreach (var rowIndex in rowsToDelete)
+                    {
+                        var bindingSource = _grid?.DataSource as BindingSource;
+                        if (bindingSource != null && rowIndex >= 0 && rowIndex < bindingSource.Count)
+                        {
+                            bindingSource.RemoveAt(rowIndex);
+                        }
+                        else if (_dataSource != null && rowIndex >= 0 && rowIndex < _dataSource.Count)
+                        {
+                            _dataSource.RemoveAt(rowIndex);
+                        }
+                    }
+                }
+            };
+
+            toolbar.Controls.Add(btnAdd);
+            toolbar.Controls.Add(btnDelete);
+
             _grid = new DataGridView
             {
                 Dock = DockStyle.Fill,
                 AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
                 AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells,
-                AllowUserToAddRows = false,
+                AutoGenerateColumns = false,
+                AllowUserToAddRows = true,
                 AllowUserToDeleteRows = true,
                 AllowUserToOrderColumns = false,
                 ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
                 EditMode = DataGridViewEditMode.EditOnEnter,
                 MultiSelect = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                RowHeadersWidthSizeMode = DataGridViewRowHeadersWidthSizeMode.AutoSizeToAllHeaders,
+                Margin = new Padding(0)
             };
 
             // Field column (combobox)
@@ -80,10 +159,10 @@ namespace CascadeFields.Configurator.Controls
             {
                 Name = "Field",
                 HeaderText = "Field",
-                DisplayMember = "DisplayName",
+                DisplayMember = "FilterDisplayName",
                 ValueMember = "LogicalName",
                 DataPropertyName = "Field",
-                Width = 150
+                Width = 180
             });
 
             // Operator column (combobox)
@@ -91,9 +170,11 @@ namespace CascadeFields.Configurator.Controls
             {
                 Name = "Operator",
                 HeaderText = "Operator",
-                DataSource = new[] { "eq", "ne", "gt", "lt", "gte", "lte", "like" },
+                DataSource = FilterOperator.GetAll(),
+                DisplayMember = nameof(FilterOperator.Display),
+                ValueMember = nameof(FilterOperator.Code),
                 DataPropertyName = "Operator",
-                Width = 100
+                Width = 140
             });
 
             // Value column (text)
@@ -107,9 +188,14 @@ namespace CascadeFields.Configurator.Controls
 
             _grid.CellValueChanged += Grid_CellValueChanged;
             _grid.UserDeletedRow += Grid_UserDeletedRow;
+            _grid.KeyDown += Grid_KeyDown;
             _grid.DataError += (s, e) => { e.ThrowException = false; };
 
-            Controls.Add(_grid);
+            // Add controls so toolbar is processed first for docking
+            container.Controls.Add(_grid);
+            container.Controls.Add(toolbar);
+
+            Controls.Add(container);
         }
 
         /// <summary>
@@ -120,13 +206,31 @@ namespace CascadeFields.Configurator.Controls
             if (_grid == null || _dataSource == null)
                 return;
 
-            _grid.DataSource = _dataSource;
+            UpdateFieldColumnSource();
+            var bindingSource = new BindingSource { DataSource = _dataSource };
+            _grid.DataSource = bindingSource;
 
             // Subscribe to collection changes
-            _dataSource.CollectionChanged += (s, e) =>
+            _dataSource.CollectionChanged += (s, e) => { _grid.Refresh(); };
+        }
+
+        private void UpdateFieldColumnSource()
+        {
+            if (_grid == null || _grid.Columns.Count == 0)
+                return;
+
+            var fieldColumn = _grid.Columns["Field"] as DataGridViewComboBoxColumn;
+            if (fieldColumn != null)
             {
-                _grid.Refresh();
-            };
+                fieldColumn.DataSource = _availableAttributes != null
+                    ? new System.Collections.Generic.List<Models.UI.AttributeItem>(_availableAttributes)
+                    : null;
+            }
+        }
+
+        private void Attributes_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        {
+            UpdateFieldColumnSource();
         }
 
         /// <summary>
@@ -166,20 +270,50 @@ namespace CascadeFields.Configurator.Controls
             }
         }
 
+
+        /// <summary>
+        /// <summary>
+        /// Handles deletion of rows via Delete key
+        /// </summary>
+        private void Grid_KeyDown(object? sender, KeyEventArgs e)
+        {
+            if (_grid == null)
+                return;
+
+            if (e.KeyCode == Keys.Delete)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+
+                // Remove selected rows in reverse order to avoid index shifting
+                var rowsToDelete = new System.Collections.Generic.List<int>();
+                foreach (DataGridViewRow row in _grid.SelectedRows)
+                {
+                    // Don't delete the new blank row (last row)
+                    if (row.IsNewRow)
+                        continue;
+                    rowsToDelete.Add(row.Index);
+                }
+
+                // Sort in descending order and remove
+                rowsToDelete.Sort((a, b) => b.CompareTo(a));
+                foreach (var rowIndex in rowsToDelete)
+                {
+                    if (_dataSource != null && rowIndex >= 0 && rowIndex < _dataSource.Count)
+                    {
+                        _dataSource.RemoveAt(rowIndex);
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// Handles user deletion of rows
         /// </summary>
         private void Grid_UserDeletedRow(object? sender, DataGridViewRowEventArgs e)
         {
-            // Row is already removed from grid, just ensure last row is blank
-            if (_dataSource?.Count > 0)
-            {
-                var lastItem = _dataSource[_dataSource.Count - 1];
-                if (lastItem != null && !string.IsNullOrEmpty(lastItem.Field))
-                {
-                    _dataSource.Add(new FilterCriterionViewModel());
-                }
-            }
+            // Windows Forms has already removed the row from the grid
+            // Just update the data source if needed
         }
     }
 }
