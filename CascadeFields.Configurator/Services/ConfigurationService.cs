@@ -650,6 +650,14 @@ namespace CascadeFields.Configurator.Services
             query.Criteria.AddCondition("plugintypeid", ConditionOperator.Equal, pluginType.Id);
             var existing = _service.RetrieveMultiple(query).Entities.FirstOrDefault();
 
+            // Aggregate all lookup fields for this child entity so any mapped relationship triggers the step
+            var lookupFields = config.RelatedEntities?
+                .Where(r => r.EntityName.Equals(related.EntityName, StringComparison.OrdinalIgnoreCase))
+                .Select(r => ResolveLookupField(r, config) ?? string.Empty)
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
             var step = new Entity("sdkmessageprocessingstep");
             if (existing != null) step.Id = existing.Id;
             step["name"] = stepName;
@@ -662,10 +670,10 @@ namespace CascadeFields.Configurator.Services
             step["supporteddeployment"] = new OptionSetValue(0); // Server
             step["configuration"] = JsonConvert.SerializeObject(config);
 
-            // Filtering attributes: only the lookup field triggers this update
-            if (!string.IsNullOrWhiteSpace(related.LookupFieldName))
+            // Filtering attributes: include all lookup fields for this child so updates on any relationship trigger
+            if (lookupFields.Any())
             {
-                step["filteringattributes"] = related.LookupFieldName;
+                step["filteringattributes"] = string.Join(",", lookupFields);
             }
 
             Guid id;
@@ -688,9 +696,10 @@ namespace CascadeFields.Configurator.Services
         {
             // Create unique PreImage name based on lookup field to support multiple relationships
             // between the same parent and child entities
-            var preImageName = string.IsNullOrWhiteSpace(related.LookupFieldName) 
+            var lookupField = ResolveLookupField(related, null);
+            var preImageName = string.IsNullOrWhiteSpace(lookupField) 
                 ? "PreImage" 
-                : $"PreImage_{related.LookupFieldName}";
+                : $"PreImage_{lookupField}";
 
             var query = new QueryExpression("sdkmessageprocessingstepimage")
             {
@@ -711,7 +720,7 @@ namespace CascadeFields.Configurator.Services
             image["entityalias"] = preImageName;
             image["imagetype"] = new OptionSetValue(0); // PreImage
             image["messagepropertyname"] = "Target";
-            image["attributes"] = related.LookupFieldName ?? string.Empty; // Only the child lookup field
+            image["attributes"] = lookupField ?? string.Empty; // Only the child lookup field
 
             if (image.Id == Guid.Empty)
             {
@@ -726,5 +735,30 @@ namespace CascadeFields.Configurator.Services
             }
 
             return id;
-        }    }
+        }
+
+        private string? ResolveLookupField(RelatedEntityConfigModel related, CascadeConfigurationModel? config)
+        {
+            if (!string.IsNullOrWhiteSpace(related.LookupFieldName))
+            {
+                return related.LookupFieldName;
+            }
+
+            // Best-effort heuristic when LookupFieldName is not supplied
+            var candidates = new List<string?>();
+
+            if (config != null && !string.IsNullOrWhiteSpace(config.ParentEntity))
+            {
+                candidates.Add($"parent{config.ParentEntity}id");
+                candidates.Add($"{config.ParentEntity}id");
+            }
+
+            if (!string.IsNullOrWhiteSpace(related.RelationshipName))
+            {
+                candidates.Add(related.RelationshipName);
+            }
+
+            return candidates.FirstOrDefault();
+        }
+    }
 }

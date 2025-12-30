@@ -40,110 +40,120 @@ namespace CascadeFields.Plugin.Services
         {
             _tracer.StartOperation("ApplyParentValuesToChildOnAttachOrCreate");
 
-            // Find related entity configuration for this child entity
-            var relatedConfig = config.RelatedEntities?.FirstOrDefault(r =>
-                r.EntityName.Equals(context.PrimaryEntityName, StringComparison.OrdinalIgnoreCase));
+            var relatedConfigs = config.RelatedEntities?
+                .Where(r => r.EntityName.Equals(context.PrimaryEntityName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
-            if (relatedConfig == null)
+            if (relatedConfigs == null || relatedConfigs.Count == 0)
             {
                 _tracer.Info($"No related entity configuration found for '{context.PrimaryEntityName}'. Skipping.");
                 _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
                 return;
             }
 
-            // Determine lookup field on the child that points to the parent
-            var lookupField = !string.IsNullOrWhiteSpace(relatedConfig.LookupFieldName)
-                ? relatedConfig.LookupFieldName
-                : DetermineLookupFieldFromRelationship(relatedConfig.RelationshipName, config.ParentEntity);
+            var aggregatedValues = new Dictionary<string, object>();
 
-            if (string.IsNullOrWhiteSpace(lookupField))
+            foreach (var relatedConfig in relatedConfigs)
             {
-                throw new InvalidPluginExecutionException(
-                    $"Unable to determine lookup field for child entity '{relatedConfig.EntityName}'. " +
-                    "Set 'lookupFieldName' in configuration.");
-            }
+                // Determine lookup field on the child that points to the parent
+                var lookupField = !string.IsNullOrWhiteSpace(relatedConfig.LookupFieldName)
+                    ? relatedConfig.LookupFieldName
+                    : DetermineLookupFieldFromRelationship(relatedConfig.RelationshipName, config.ParentEntity);
 
-            // Ensure there is a parent reference on create; for update, ensure it changed
-            if (string.Equals(context.MessageName, "Create", StringComparison.OrdinalIgnoreCase))
-            {
-                if (!target.Contains(lookupField))
+                if (string.IsNullOrWhiteSpace(lookupField))
                 {
-                    _tracer.Info($"Create did not include '{lookupField}' on child; nothing to do.");
+                    throw new InvalidPluginExecutionException(
+                        $"Unable to determine lookup field for child entity '{relatedConfig.EntityName}'. " +
+                        "Set 'lookupFieldName' in configuration.");
+                }
+
+                // Ensure there is a parent reference on create; for update, ensure it changed
+                if (string.Equals(context.MessageName, "Create", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!target.Contains(lookupField))
+                    {
+                        _tracer.Info($"Create did not include '{lookupField}' on child; skipping this mapping set.");
+                        continue;
+                    }
+                }
+                else if (string.Equals(context.MessageName, "Update", StringComparison.OrdinalIgnoreCase))
+                {
+                    var changed = HasLookupChanged(target, preImage, lookupField);
+                    if (!changed)
+                    {
+                        _tracer.Info($"Update did not change '{lookupField}'; skipping mapping set for this lookup.");
+                        continue;
+                    }
+                }
+                else
+                {
+                    _tracer.Info($"Unsupported message '{context.MessageName}' for child attach handling.");
                     _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
                     return;
                 }
-            }
-            else if (string.Equals(context.MessageName, "Update", StringComparison.OrdinalIgnoreCase))
-            {
-                var changed = HasLookupChanged(target, preImage, lookupField);
-                if (!changed)
+
+                var parentRef = target.GetAttributeValue<EntityReference>(lookupField);
+                if (parentRef == null || parentRef.Id == Guid.Empty)
                 {
-                    _tracer.Info($"Update did not change '{lookupField}'; skipping child attach handling.");
-                    _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
-                    return;
-                }
-            }
-            else
-            {
-                _tracer.Info($"Unsupported message '{context.MessageName}' for child attach handling.");
-                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
-                return;
-            }
-
-            var parentRef = target.GetAttributeValue<EntityReference>(lookupField);
-            if (parentRef == null || parentRef.Id == Guid.Empty)
-            {
-                _tracer.Info("No parent reference present after change; skipping.");
-                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
-                return;
-            }
-
-            // Optional: ensure lookup points to the configured parent entity (handles polymorphic lookups)
-            if (!string.IsNullOrWhiteSpace(config.ParentEntity) &&
-                !config.ParentEntity.Equals(parentRef.LogicalName, StringComparison.OrdinalIgnoreCase))
-            {
-                _tracer.Info($"Lookup '{lookupField}' points to '{parentRef.LogicalName}', not configured parent '{config.ParentEntity}'. Skipping.");
-                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
-                return;
-            }
-
-            // Respect filterCriteria by verifying the single child matches (if provided)
-            if (!string.IsNullOrWhiteSpace(relatedConfig.FilterCriteria) && target.Id != Guid.Empty)
-            {
-                if (!ChildMatchesFilter(target.LogicalName, target.Id, relatedConfig))
-                {
-                    _tracer.Info("Child does not meet filter criteria; skipping.");
-                    _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
-                    return;
-                }
-            }
-
-            // Retrieve parent with needed source fields
-            var sourceFields = relatedConfig.FieldMappings?.Select(m => m.SourceField).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? Array.Empty<string>();
-            if (sourceFields.Length == 0)
-            {
-                _tracer.Info("No field mappings defined for child; nothing to copy.");
-                _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
-                return;
-            }
-
-            var parent = _service.Retrieve(config.ParentEntity, parentRef.Id, new ColumnSet(sourceFields));
-
-            // Build values to apply to the child using mapping logic (string conversion/truncation aware)
-            var values = new Dictionary<string, object>();
-            foreach (var mapping in relatedConfig.FieldMappings)
-            {
-                if (!parent.Contains(mapping.SourceField))
-                {
+                    _tracer.Info($"Lookup '{lookupField}' has no parent reference; skipping this mapping set.");
                     continue;
                 }
-                var mapped = GetMappedValueForTarget(parent, mapping, relatedConfig.EntityName);
-                values[mapping.TargetField] = mapped;
+
+                // Optional: ensure lookup points to the configured parent entity (handles polymorphic lookups)
+                if (!string.IsNullOrWhiteSpace(config.ParentEntity) &&
+                    !config.ParentEntity.Equals(parentRef.LogicalName, StringComparison.OrdinalIgnoreCase))
+                {
+                    _tracer.Info($"Lookup '{lookupField}' points to '{parentRef.LogicalName}', not configured parent '{config.ParentEntity}'. Skipping this mapping set.");
+                    continue;
+                }
+
+                // Respect filterCriteria by verifying the single child matches (if provided)
+                if (!string.IsNullOrWhiteSpace(relatedConfig.FilterCriteria) && target.Id != Guid.Empty)
+                {
+                    if (!ChildMatchesFilter(target.LogicalName, target.Id, relatedConfig))
+                    {
+                        _tracer.Info("Child does not meet filter criteria; skipping this mapping set.");
+                        continue;
+                    }
+                }
+
+                // Retrieve parent with needed source fields
+                var sourceFields = relatedConfig.FieldMappings?.Select(m => m.SourceField).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? Array.Empty<string>();
+                if (sourceFields.Length == 0)
+                {
+                    _tracer.Info("No field mappings defined for child; skipping this mapping set.");
+                    continue;
+                }
+
+                var parent = _service.Retrieve(config.ParentEntity, parentRef.Id, new ColumnSet(sourceFields));
+
+                // Build values to apply to the child using mapping logic (string conversion/truncation aware)
+                var values = new Dictionary<string, object>();
+                foreach (var mapping in relatedConfig.FieldMappings)
+                {
+                    if (!parent.Contains(mapping.SourceField))
+                    {
+                        continue;
+                    }
+                    var mapped = GetMappedValueForTarget(parent, mapping, relatedConfig.EntityName);
+                    values[mapping.TargetField] = mapped;
+                }
+
+                if (values.Count == 0)
+                {
+                    _tracer.Info("No values resolved from parent to apply to child for this mapping set.");
+                    continue;
+                }
+
+                foreach (var kvp in values)
+                {
+                    aggregatedValues[kvp.Key] = kvp.Value;
+                }
             }
 
-            if (values.Count == 0)
+            if (aggregatedValues.Count == 0)
             {
-                _tracer.Info("No values resolved from parent to apply to child.");
+                _tracer.Info("No values resolved from any related entity configuration; nothing to apply to child.");
                 _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
                 return;
             }
@@ -151,11 +161,11 @@ namespace CascadeFields.Plugin.Services
             // PreOperation: assign to target so the platform writes them as part of the same transaction
             if (context.Stage == 20 /* PreOperation */)
             {
-                foreach (var kvp in values)
+                foreach (var kvp in aggregatedValues)
                 {
                     target[kvp.Key] = kvp.Value;
                 }
-                _tracer.Info($"Applied {values.Count} mapped values to child in PreOperation.");
+                _tracer.Info($"Applied {aggregatedValues.Count} mapped values to child in PreOperation.");
             }
             else
             {
@@ -167,12 +177,12 @@ namespace CascadeFields.Plugin.Services
                 else
                 {
                     var update = new Entity(target.LogicalName, target.Id);
-                    foreach (var kvp in values)
+                    foreach (var kvp in aggregatedValues)
                     {
                         update[kvp.Key] = kvp.Value;
                     }
                     _service.Update(update);
-                    _tracer.Info($"Updated child with {values.Count} mapped values post-operation.");
+                    _tracer.Info($"Updated child with {aggregatedValues.Count} mapped values post-operation.");
                 }
             }
 

@@ -250,9 +250,25 @@ namespace CascadeFields.Configurator.ViewModels
                 (o) => ClearSession(),
                 (o) => IsConnected);
 
-            // Subscribe to relationship tabs changes to update JSON
+            // Subscribe to relationship tabs changes to update JSON and hook child collections
             RelationshipTabs.CollectionChanged += (s, e) =>
             {
+                if (e.NewItems != null)
+                {
+                    foreach (RelationshipTabViewModel tab in e.NewItems)
+                    {
+                        HookTabEvents(tab);
+                    }
+                }
+
+                if (e.OldItems != null)
+                {
+                    foreach (RelationshipTabViewModel tab in e.OldItems)
+                    {
+                        UnhookTabEvents(tab);
+                    }
+                }
+
                 UpdateJsonPreview();
                 OnPropertyChanged(nameof(IsConfigurationValid));
                 ScheduleSave();
@@ -823,6 +839,81 @@ namespace CascadeFields.Configurator.ViewModels
             {
                 Debug.WriteLine($"Error generating JSON: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Hooks change events on a relationship tab so JSON stays in sync
+        /// </summary>
+        private void HookTabEvents(RelationshipTabViewModel tab)
+        {
+            // Field mappings collection changes
+            tab.FieldMappings.CollectionChanged += TabChildCollectionChanged;
+            // Filter criteria collection changes
+            tab.FilterCriteria.CollectionChanged += TabChildCollectionChanged;
+
+            // Existing item property changes
+            foreach (var mapping in tab.FieldMappings)
+            {
+                mapping.PropertyChanged += TabChildItemPropertyChanged;
+            }
+            foreach (var filter in tab.FilterCriteria)
+            {
+                filter.PropertyChanged += TabChildItemPropertyChanged;
+            }
+        }
+
+        /// <summary>
+        /// Unhooks change events from a relationship tab
+        /// </summary>
+        private void UnhookTabEvents(RelationshipTabViewModel tab)
+        {
+            tab.FieldMappings.CollectionChanged -= TabChildCollectionChanged;
+            tab.FilterCriteria.CollectionChanged -= TabChildCollectionChanged;
+
+            foreach (var mapping in tab.FieldMappings)
+            {
+                mapping.PropertyChanged -= TabChildItemPropertyChanged;
+            }
+            foreach (var filter in tab.FilterCriteria)
+            {
+                filter.PropertyChanged -= TabChildItemPropertyChanged;
+            }
+        }
+
+        private void TabChildCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            // Hook property change events for new items
+            if (e.NewItems != null)
+            {
+                foreach (var item in e.NewItems)
+                {
+                    if (item is ViewModelBase vm)
+                    {
+                        vm.PropertyChanged += TabChildItemPropertyChanged;
+                    }
+                }
+            }
+
+            // Unhook removed items
+            if (e.OldItems != null)
+            {
+                foreach (var item in e.OldItems)
+                {
+                    if (item is ViewModelBase vm)
+                    {
+                        vm.PropertyChanged -= TabChildItemPropertyChanged;
+                    }
+                }
+            }
+
+            UpdateJsonPreview();
+            ScheduleSave();
+        }
+
+        private void TabChildItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            UpdateJsonPreview();
+            ScheduleSave();
         }
 
         /// <summary>
