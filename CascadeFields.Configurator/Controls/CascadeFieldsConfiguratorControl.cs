@@ -249,11 +249,6 @@ namespace CascadeFields.Configurator.Controls
             };
 
             // Button event handlers
-            btnLoadMetadata.Click += (s, e) =>
-            {
-                _viewModel.LoadSolutionsCommand.Execute(null);
-            };
-
             btnAddChildRelationship.Click += (s, e) =>
             {
                 _viewModel.AddRelationshipCommand.Execute(null);
@@ -273,11 +268,6 @@ namespace CascadeFields.Configurator.Controls
             btnPublish.Click += (s, e) =>
             {
                 _viewModel.PublishCommand.Execute(null);
-            };
-
-            btnClearSession.Click += (s, e) =>
-            {
-                _viewModel.ClearSessionCommand.Execute(null);
             };
 
             // Checkbox handlers

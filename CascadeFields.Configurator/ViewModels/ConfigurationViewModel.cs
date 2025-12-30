@@ -36,7 +36,7 @@ namespace CascadeFields.Configurator.ViewModels
         private bool _isConnected;
         private string _connectionId = string.Empty;
         private bool _isLoading;
-        private string _statusMessage = "Ready. Connect to Dataverse and click 'Reload Metadata'.";
+        private string _statusMessage = "Ready. Connect to Dataverse and click 'Retrieve Configured Entity'.";
         private SolutionItem? _selectedSolution;
         private EntityItem? _selectedParentEntity;
         private RelationshipTabViewModel? _selectedTab;
@@ -292,7 +292,7 @@ namespace CascadeFields.Configurator.ViewModels
             }
             else
             {
-                StatusMessage = "Ready. Click 'Reload Metadata' to get started.";
+                StatusMessage = "Ready. Click 'Retrieve Configured Entity' to get started.";
             }
         }
 

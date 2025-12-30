@@ -147,7 +147,7 @@ namespace CascadeFields.Configurator.Services
                 var pluginType = FindOrCreatePluginType(progress);
                 if (pluginType == null)
                 {
-                    throw new InvalidPluginExecutionException("CascadeFields plugin type not found. Use 'Update Cascade Fields Plug-in' first.");
+                    throw new InvalidPluginExecutionException("CascadeFields plugin type not found. Ensure the plugin is deployed to Dataverse.");
                 }
 
                 // Ensure sdkmessage 'Update' and filter for parent entity

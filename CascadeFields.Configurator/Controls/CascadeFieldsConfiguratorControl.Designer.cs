@@ -9,13 +9,10 @@ namespace CascadeFields.Configurator.Controls
     {
         private IContainer components = null!;
         private FlowLayoutPanel ribbonPanel;
-        private Button btnLoadMetadata;
         private Button btnAddChildRelationship;
         private Button btnRemoveRelationship;
         private Button btnRetrieveConfigured;
-        private Button btnUpdatePlugin;
         private Button btnPublish;
-        private Button btnClearSession;
         private SplitContainer splitContainerMain;
         private SplitContainer splitContainerLeft;
         private SplitContainer splitContainerRight;
@@ -53,13 +50,10 @@ namespace CascadeFields.Configurator.Controls
         {
             components = new Container();
             ribbonPanel = new FlowLayoutPanel();
-            btnLoadMetadata = new Button();
+            btnRetrieveConfigured = new Button();
             btnAddChildRelationship = new Button();
             btnRemoveRelationship = new Button();
-            btnRetrieveConfigured = new Button();
-            btnUpdatePlugin = new Button();
             btnPublish = new Button();
-            btnClearSession = new Button();
             splitContainerMain = new SplitContainer();
             splitContainerLeft = new SplitContainer();
             leftUpperLayout = new TableLayoutPanel();
@@ -108,32 +102,22 @@ namespace CascadeFields.Configurator.Controls
             ribbonPanel.WrapContents = false;
             ribbonPanel.Controls.AddRange(new Control[]
             {
-                btnLoadMetadata,
+                btnRetrieveConfigured,
                 btnAddChildRelationship,
                 btnRemoveRelationship,
-                btnRetrieveConfigured,
-                btnUpdatePlugin,
-                btnPublish,
-                btnClearSession
+                btnPublish
             });
-            // 
-            // btnLoadMetadata
-            // 
-            btnLoadMetadata.FlatStyle = FlatStyle.Flat;
-            btnLoadMetadata.Text = "Reload Metadata";
-            btnLoadMetadata.AutoSize = true;
-            btnLoadMetadata.Margin = new Padding(4);
-            btnLoadMetadata.FlatAppearance.BorderSize = 0;
-            btnLoadMetadata.UseVisualStyleBackColor = true;
             // 
             // btnAddChildRelationship
             // 
             btnAddChildRelationship.FlatStyle = FlatStyle.Flat;
-            btnAddChildRelationship.Text = "Add Child Relationship";
+            btnAddChildRelationship.Text = "Add Relationship";
             btnAddChildRelationship.AutoSize = true;
             btnAddChildRelationship.Margin = new Padding(4);
             btnAddChildRelationship.FlatAppearance.BorderSize = 0;
             btnAddChildRelationship.UseVisualStyleBackColor = true;
+            btnAddChildRelationship.Image = Image.FromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "", "Assets", "Icon", "Child Add.png"));
+            btnAddChildRelationship.TextImageRelation = TextImageRelation.ImageBeforeText;
             // 
             // btnRemoveRelationship
             // 
@@ -143,6 +127,8 @@ namespace CascadeFields.Configurator.Controls
             btnRemoveRelationship.Margin = new Padding(4);
             btnRemoveRelationship.FlatAppearance.BorderSize = 0;
             btnRemoveRelationship.UseVisualStyleBackColor = true;
+            btnRemoveRelationship.Image = Image.FromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "", "Assets", "Icon", "Child Delete.png"));
+            btnRemoveRelationship.TextImageRelation = TextImageRelation.ImageBeforeText;
             // 
             // btnRetrieveConfigured
             // 
@@ -152,33 +138,19 @@ namespace CascadeFields.Configurator.Controls
             btnRetrieveConfigured.Margin = new Padding(4);
             btnRetrieveConfigured.FlatAppearance.BorderSize = 0;
             btnRetrieveConfigured.UseVisualStyleBackColor = true;
-            // 
-            // btnUpdatePlugin
-            // 
-            btnUpdatePlugin.FlatStyle = FlatStyle.Flat;
-            btnUpdatePlugin.Text = "Update Cascade Fields Plug-in";
-            btnUpdatePlugin.AutoSize = true;
-            btnUpdatePlugin.Margin = new Padding(4);
-            btnUpdatePlugin.FlatAppearance.BorderSize = 0;
-            btnUpdatePlugin.UseVisualStyleBackColor = true;
+            btnRetrieveConfigured.Image = Image.FromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "", "Assets", "Icon", "LoadEntities.png"));
+            btnRetrieveConfigured.TextImageRelation = TextImageRelation.ImageBeforeText;
             // 
             // btnPublish
             // 
             btnPublish.FlatStyle = FlatStyle.Flat;
-            btnPublish.Text = "Publish Configuration";
+            btnPublish.Text = "Publish Configuration and Plug-in";
             btnPublish.AutoSize = true;
             btnPublish.Margin = new Padding(4);
             btnPublish.FlatAppearance.BorderSize = 0;
             btnPublish.UseVisualStyleBackColor = true;
-            // 
-            // btnClearSession
-            // 
-            btnClearSession.FlatStyle = FlatStyle.Flat;
-            btnClearSession.Text = "Clear Session";
-            btnClearSession.AutoSize = true;
-            btnClearSession.Margin = new Padding(4);
-            btnClearSession.FlatAppearance.BorderSize = 0;
-            btnClearSession.UseVisualStyleBackColor = true;
+            btnPublish.Image = Image.FromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "", "Assets", "Icon", "PublishConfiguration.png"));
+            btnPublish.TextImageRelation = TextImageRelation.ImageBeforeText;            
             // 
             // splitContainerMain
             // 
