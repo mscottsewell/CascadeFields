@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Specialized;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -20,6 +21,7 @@ namespace CascadeFields.Configurator.Controls
     public partial class CascadeFieldsConfiguratorControl : PluginControlBase
     {
         private ConfigurationViewModel? _viewModel;
+        private string? _currentConnectionId;
 
         public CascadeFieldsConfiguratorControl()
         {
@@ -48,7 +50,8 @@ namespace CascadeFields.Configurator.Controls
             _viewModel = new ConfigurationViewModel(
                 metadataService,
                 configurationService,
-                settingsRepository);
+                settingsRepository,
+                AppendLog);
 
             // Initialize ViewModel with connection and restore session
             var connectionId = ConnectionDetail?.ConnectionId.ToString() ?? "default";
@@ -131,6 +134,80 @@ namespace CascadeFields.Configurator.Controls
             if (_viewModel == null)
             {
                 Initialize();
+            }
+        }
+
+        /// <summary>
+        /// Handles connection change by clearing state and reinitializing
+        /// </summary>
+        private async void HandleConnectionChange(string newConnectionId)
+        {
+            _currentConnectionId = newConnectionId;
+
+            // Clear log
+            if (txtLog.InvokeRequired)
+            {
+                txtLog.Invoke((MethodInvoker)(() => txtLog.Clear()));
+            }
+            else
+            {
+                txtLog.Clear();
+            }
+
+            // Clear tabs immediately
+            if (tabControlRightUpper.InvokeRequired)
+            {
+                tabControlRightUpper.Invoke((MethodInvoker)(() => tabControlRightUpper.TabPages.Clear()));
+            }
+            else
+            {
+                tabControlRightUpper.TabPages.Clear();
+            }
+
+            // Clear JSON preview
+            if (txtJsonPreview.InvokeRequired)
+            {
+                txtJsonPreview.Invoke((MethodInvoker)(() => txtJsonPreview.Clear()));
+            }
+            else
+            {
+                txtJsonPreview.Clear();
+            }
+
+            // Get connection name for logging
+            var connectionName = ConnectionDetail?.ConnectionName ?? "Unknown";
+            AppendLog($"Connection changed to: {connectionName}");
+            AppendLog("Loading metadata from new environment...");
+
+            // Dispose old ViewModel and recreate with new services
+            _viewModel = null;
+
+            // Create new services with the updated Service property (set by base.UpdateConnection)
+            var metadataService = new MetadataService(Service);
+            var configurationService = new ConfigurationService(Service);
+            var settingsRepository = new SettingsRepository();
+
+            // Create new ViewModel
+            _viewModel = new ConfigurationViewModel(
+                metadataService,
+                configurationService,
+                settingsRepository,
+                AppendLog);
+
+            // Wire up UI events for new ViewModel
+            WireUpBindings();
+
+            // Initialize with new connection
+            await _viewModel.InitializeAsync(newConnectionId);
+
+            // Sync UI
+            if (InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)(() => SyncUiFromViewModel()));
+            }
+            else
+            {
+                SyncUiFromViewModel();
             }
         }
 
@@ -246,40 +323,47 @@ namespace CascadeFields.Configurator.Controls
                     chkEnableTracing.Checked = _viewModel.EnableTracing;
                 if (e.PropertyName == nameof(ConfigurationViewModel.IsActive))
                     chkIsActive.Checked = _viewModel.IsActive;
+
+                // Keep solution/parent entity combos in sync when selection changes in ViewModel
+                if (e.PropertyName == nameof(ConfigurationViewModel.SelectedSolution) ||
+                    e.PropertyName == nameof(ConfigurationViewModel.SelectedParentEntity))
+                {
+                    if (InvokeRequired)
+                    {
+                        BeginInvoke((MethodInvoker)(() => SyncUiFromViewModel()));
+                    }
+                    else
+                    {
+                        SyncUiFromViewModel();
+                    }
+                }
             };
 
-            // Button event handlers
-            btnAddChildRelationship.Click += (s, e) =>
-            {
-                _viewModel.AddRelationshipCommand.Execute(null);
-            };
+            // Button event handlers (ensure single subscription)
+            btnAddChildRelationship.Click -= BtnAddChildRelationship_Click;
+            btnAddChildRelationship.Click += BtnAddChildRelationship_Click;
 
-            btnRetrieveConfigured.Click += async (s, e) =>
-            {
-                await RetrieveConfiguredEntityAsync();
-            };
+            btnExportJson.Click -= BtnExportJson_Click;
+            btnExportJson.Click += BtnExportJson_Click;
 
-            btnRemoveRelationship.Click += (s, e) =>
-            {
-                if (_viewModel.SelectedTab != null)
-                    _viewModel.RemoveRelationshipCommand.Execute(_viewModel.SelectedTab);
-            };
+            btnImportJson.Click -= BtnImportJson_Click;
+            btnImportJson.Click += BtnImportJson_Click;
 
-            btnPublish.Click += (s, e) =>
-            {
-                _viewModel.PublishCommand.Execute(null);
-            };
+            btnRetrieveConfigured.Click -= BtnRetrieveConfigured_Click;
+            btnRetrieveConfigured.Click += BtnRetrieveConfigured_Click;
 
-            // Checkbox handlers
-            chkEnableTracing.CheckedChanged += (s, e) =>
-            {
-                _viewModel.EnableTracing = chkEnableTracing.Checked;
-            };
+            btnRemoveRelationship.Click -= BtnRemoveRelationship_Click;
+            btnRemoveRelationship.Click += BtnRemoveRelationship_Click;
 
-            chkIsActive.CheckedChanged += (s, e) =>
-            {
-                _viewModel.IsActive = chkIsActive.Checked;
-            };
+            btnPublish.Click -= BtnPublish_Click;
+            btnPublish.Click += BtnPublish_Click;
+
+            // Checkbox handlers (ensure single subscription)
+            chkEnableTracing.CheckedChanged -= ChkEnableTracing_CheckedChanged;
+            chkEnableTracing.CheckedChanged += ChkEnableTracing_CheckedChanged;
+
+            chkIsActive.CheckedChanged -= ChkIsActive_CheckedChanged;
+            chkIsActive.CheckedChanged += ChkIsActive_CheckedChanged;
 
             // Initialize UI
             lblStatus.Text = _viewModel.StatusMessage;
@@ -324,6 +408,123 @@ namespace CascadeFields.Configurator.Controls
             {
                 Write();
             }
+        }
+
+        private void ExportJson()
+        {
+            var vm = _viewModel;
+            if (vm == null || string.IsNullOrWhiteSpace(vm.ConfigurationJson))
+            {
+                MessageBox.Show("No configuration to export.", "Export JSON", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            var parentNameForFile = vm.SelectedParentEntity?.LogicalName;
+            using var dialog = new SaveFileDialog
+            {
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+                FileName = string.IsNullOrWhiteSpace(parentNameForFile)
+                    ? "cascade-config.json"
+                    : $"{parentNameForFile}-cascade-config.json"
+            };
+
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                File.WriteAllText(dialog.FileName, vm.ConfigurationJson);
+                AppendLog($"Configuration exported to {dialog.FileName}");
+                MessageBox.Show("Configuration JSON exported.", "Export JSON", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+        }
+
+        private async Task ImportJsonAsync()
+        {
+            var vm = _viewModel;
+            if (vm == null)
+                return;
+
+            using var dialog = new OpenFileDialog
+            {
+                Filter = "JSON files (*.json)|*.json|All files (*.*)|*.*"
+            };
+
+            if (dialog.ShowDialog() == DialogResult.OK)
+            {
+                try
+                {
+                    var json = File.ReadAllText(dialog.FileName);
+                    AppendLog($"Importing configuration from {dialog.FileName}");
+
+                    var (isValid, errors, warnings, missingComponents) = await vm.ValidateConfigurationJsonAsync(json, vm.SelectedSolution?.UniqueName);
+
+                    if (!isValid)
+                    {
+                        var message = "Import blocked. Please fix the following issues:\n- " + string.Join("\n- ", errors);
+                        MessageBox.Show(message, "Import JSON", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        AppendLog(message);
+                        return;
+                    }
+
+                    if (warnings.Any())
+                    {
+                        var warnText = "Warnings:\n- " + string.Join("\n- ", warnings);
+                        MessageBox.Show(warnText + "\n\nYou can add the missing items to the current solution now.", "Import JSON", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        AppendLog(warnText);
+                    }
+
+                    // Offer to add missing components to the current solution
+                    if (vm.SelectedSolution == null)
+                    {
+                        MessageBox.Show("Select a solution before importing.", "Import JSON", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
+
+                    if (missingComponents.Any())
+                    {
+                        var detail = string.Join("\n- ", missingComponents.Select(c => c.description));
+                        var prompt = $"The following items are not in solution '{vm.SelectedSolution.UniqueName}':\n- {detail}\n\nAdd them now?";
+                        var result = MessageBox.Show(prompt, "Add to Solution", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                        if (result == DialogResult.No)
+                        {
+                            AppendLog("Import cancelled by user (missing items not added).");
+                            return;
+                        }
+
+                        var progress = new Progress<string>(msg => AppendLog(msg));
+                        await vm.ConfigurationService.AddComponentsToSolutionAsync(vm.SelectedSolution!.Id, missingComponents, progress);
+                    }
+
+                    await vm.ApplyConfigurationAsync(json);
+            txtJsonPreview.Text = vm.ConfigurationJson;
+                    MessageBox.Show("Configuration JSON imported.", "Import JSON", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Failed to import JSON: {ex.Message}", "Import JSON", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    AppendLog($"Failed to import JSON: {ex}");
+                }
+            }
+        }
+
+        // Named handlers to avoid duplicate subscriptions after reconnects
+        private void BtnAddChildRelationship_Click(object? sender, EventArgs e) => _viewModel?.AddRelationshipCommand.Execute(null);
+        private void BtnRemoveRelationship_Click(object? sender, EventArgs e)
+        {
+            if (_viewModel?.SelectedTab != null)
+                _viewModel.RemoveRelationshipCommand.Execute(_viewModel.SelectedTab);
+        }
+        private void BtnPublish_Click(object? sender, EventArgs e) => _viewModel?.PublishCommand.Execute(null);
+        private void BtnExportJson_Click(object? sender, EventArgs e) => ExportJson();
+        private async void BtnImportJson_Click(object? sender, EventArgs e) => await ImportJsonAsync();
+        private async void BtnRetrieveConfigured_Click(object? sender, EventArgs e) => await RetrieveConfiguredEntityAsync();
+        private void ChkEnableTracing_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (_viewModel != null)
+                _viewModel.EnableTracing = chkEnableTracing.Checked;
+        }
+        private void ChkIsActive_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (_viewModel != null)
+                _viewModel.IsActive = chkIsActive.Checked;
         }
 
         /// <summary>
@@ -415,14 +616,27 @@ namespace CascadeFields.Configurator.Controls
         }
 
         /// <summary>
-        /// Called when connection is established
+        /// Called when connection is established or changed
         /// </summary>
         public override void UpdateConnection(IOrganizationService newService, ConnectionDetail detail, string actionName, object? parameter)
         {
             base.UpdateConnection(newService, detail, actionName, parameter);
             if (newService != null)
             {
-                EnsureInitialized();
+                var newConnectionId = detail?.ConnectionId.ToString() ?? "default";
+                
+                // Detect connection change
+                if (_currentConnectionId != null && _currentConnectionId != newConnectionId)
+                {
+                    // Connection changed - clear state and reinitialize
+                    HandleConnectionChange(newConnectionId);
+                }
+                else
+                {
+                    // First connection or same connection
+                    _currentConnectionId = newConnectionId;
+                    EnsureInitialized();
+                }
             }
         }
 

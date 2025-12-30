@@ -37,7 +37,7 @@ namespace CascadeFields.Configurator.Services
 
                 var results = _service.RetrieveMultiple(query);
                 var systemSolutions = new[] { "Active", "Basic", "Common" };
-                return results.Entities
+                var solutions = results.Entities
                     .Select(e => new SolutionItem
                     {
                         Id = e.Id,
@@ -47,6 +47,16 @@ namespace CascadeFields.Configurator.Services
                     .Where(s => !systemSolutions.Contains(s.UniqueName, StringComparer.OrdinalIgnoreCase) &&
                                !s.FriendlyName.Equals("Common Data Service Default Solution", StringComparison.OrdinalIgnoreCase))
                     .ToList();
+                
+                // Ensure "Default" solution is at the top of the list
+                var defaultSolution = solutions.FirstOrDefault(s => s.UniqueName.Equals("Default", StringComparison.OrdinalIgnoreCase));
+                if (defaultSolution != null)
+                {
+                    solutions.Remove(defaultSolution);
+                    solutions.Insert(0, defaultSolution);
+                }
+                
+                return solutions;
             });
         }
 
@@ -141,7 +151,7 @@ namespace CascadeFields.Configurator.Services
                 var entityFilter = new MetadataFilterExpression(LogicalOperator.And);
                 entityFilter.Conditions.Add(new MetadataConditionExpression("MetadataId", MetadataConditionOperator.In, entityIds.ToArray()));
                 entityFilter.Conditions.Add(new MetadataConditionExpression("IsIntersect", MetadataConditionOperator.Equals, false));
-                entityFilter.Conditions.Add(new MetadataConditionExpression("IsCustomizable", MetadataConditionOperator.Equals, true));
+                // Include managed entities as well; filtering by IsCustomizable would exclude managed solutions when switching environments
 
                 var entityQueryExpression = new EntityQueryExpression
                 {

@@ -6,8 +6,15 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Scott Sewell")] 
 [assembly: AssemblyProduct("CascadeFields Configurator")]
-[assembly: AssemblyCopyright("Copyright © 2026")]
+[assembly: AssemblyCopyright("Copyright 2026")]
 [assembly: AssemblyTrademark("")]
 [assembly: ComVisible(false)]
-[assembly: AssemblyVersion("1.2026.1.0")]
-[assembly: AssemblyFileVersion("1.2026.1.0")]
+[assembly: AssemblyVersion("1.2026.1.106")]
+[assembly: AssemblyFileVersion("1.2026.1.106")]
+
+
+
+
+
+
+

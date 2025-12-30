@@ -1,5 +1,8 @@
+using System;
 using System.ComponentModel;
 using System.Drawing;
+using System.IO;
+using System.Reflection;
 using System.Windows.Forms;
 using XrmToolBox.Extensibility;
 
@@ -9,10 +12,12 @@ namespace CascadeFields.Configurator.Controls
     {
         private IContainer components = null!;
         private FlowLayoutPanel ribbonPanel;
-        private Button btnAddChildRelationship;
-        private Button btnRemoveRelationship;
-        private Button btnRetrieveConfigured;
-        private Button btnPublish;
+        private Button btnAddChildRelationship = null!;
+        private Button btnRemoveRelationship = null!;
+        private Button btnRetrieveConfigured = null!;
+        private Button btnExportJson = null!;
+        private Button btnImportJson = null!;
+        private Button btnPublish = null!;
         private SplitContainer splitContainerMain;
         private SplitContainer splitContainerLeft;
         private SplitContainer splitContainerRight;
@@ -31,6 +36,33 @@ namespace CascadeFields.Configurator.Controls
         private CheckBox chkEnableTracing;
         private CheckBox chkIsActive;
         private Label lblStatus;
+
+        private static Image LoadIcon(string fileName)
+        {
+            try
+            {
+                var baseDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty;
+                var candidates = new[]
+                {
+                    Path.Combine(baseDir, "CascadeFieldsConfigurator", "Assets", "Icon", fileName),
+                    Path.Combine(baseDir, "Assets", "Icon", fileName),
+                };
+
+                foreach (var path in candidates)
+                {
+                    if (File.Exists(path))
+                    {
+                        return Image.FromFile(path);
+                    }
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            return SystemIcons.Application.ToBitmap();
+        }
 
         /// <summary>
         ///  Clean up any resources being used.
@@ -51,6 +83,8 @@ namespace CascadeFields.Configurator.Controls
             components = new Container();
             ribbonPanel = new FlowLayoutPanel();
             btnRetrieveConfigured = new Button();
+            btnExportJson = new Button();
+            btnImportJson = new Button();
             btnAddChildRelationship = new Button();
             btnRemoveRelationship = new Button();
             btnPublish = new Button();
@@ -103,6 +137,8 @@ namespace CascadeFields.Configurator.Controls
             ribbonPanel.Controls.AddRange(new Control[]
             {
                 btnRetrieveConfigured,
+                btnExportJson,
+                btnImportJson,
                 btnAddChildRelationship,
                 btnRemoveRelationship,
                 btnPublish
@@ -116,7 +152,7 @@ namespace CascadeFields.Configurator.Controls
             btnAddChildRelationship.Margin = new Padding(4);
             btnAddChildRelationship.FlatAppearance.BorderSize = 0;
             btnAddChildRelationship.UseVisualStyleBackColor = true;
-            btnAddChildRelationship.Image = Image.FromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "", "Assets", "Icon", "Child Add.png"));
+            btnAddChildRelationship.Image = LoadIcon("CascadeFields_AddRelationship.png");
             btnAddChildRelationship.TextImageRelation = TextImageRelation.ImageBeforeText;
             // 
             // btnRemoveRelationship
@@ -127,7 +163,7 @@ namespace CascadeFields.Configurator.Controls
             btnRemoveRelationship.Margin = new Padding(4);
             btnRemoveRelationship.FlatAppearance.BorderSize = 0;
             btnRemoveRelationship.UseVisualStyleBackColor = true;
-            btnRemoveRelationship.Image = Image.FromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "", "Assets", "Icon", "Child Delete.png"));
+            btnRemoveRelationship.Image = LoadIcon("CascadeFields_RemoveRelationship.png");
             btnRemoveRelationship.TextImageRelation = TextImageRelation.ImageBeforeText;
             // 
             // btnRetrieveConfigured
@@ -138,8 +174,28 @@ namespace CascadeFields.Configurator.Controls
             btnRetrieveConfigured.Margin = new Padding(4);
             btnRetrieveConfigured.FlatAppearance.BorderSize = 0;
             btnRetrieveConfigured.UseVisualStyleBackColor = true;
-            btnRetrieveConfigured.Image = Image.FromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "", "Assets", "Icon", "LoadEntities.png"));
+            btnRetrieveConfigured.Image = LoadIcon("CascadeFields_LoadConfig.png");
             btnRetrieveConfigured.TextImageRelation = TextImageRelation.ImageBeforeText;
+
+            // btnExportJson
+            btnExportJson.FlatStyle = FlatStyle.Flat;
+            btnExportJson.Text = "Export JSON";
+            btnExportJson.AutoSize = true;
+            btnExportJson.Margin = new Padding(4);
+            btnExportJson.FlatAppearance.BorderSize = 0;
+            btnExportJson.UseVisualStyleBackColor = true;
+            btnExportJson.Image = LoadIcon("CascadeFields_SaveJSON.png");
+            btnExportJson.TextImageRelation = TextImageRelation.ImageBeforeText;
+
+            // btnImportJson
+            btnImportJson.FlatStyle = FlatStyle.Flat;
+            btnImportJson.Text = "Import JSON";
+            btnImportJson.AutoSize = true;
+            btnImportJson.Margin = new Padding(4);
+            btnImportJson.FlatAppearance.BorderSize = 0;
+            btnImportJson.UseVisualStyleBackColor = true;
+            btnImportJson.Image = LoadIcon("CascadeFields_LoadJSON.png");
+            btnImportJson.TextImageRelation = TextImageRelation.ImageBeforeText;
             // 
             // btnPublish
             // 
@@ -149,7 +205,7 @@ namespace CascadeFields.Configurator.Controls
             btnPublish.Margin = new Padding(4);
             btnPublish.FlatAppearance.BorderSize = 0;
             btnPublish.UseVisualStyleBackColor = true;
-            btnPublish.Image = Image.FromFile(System.IO.Path.Combine(System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "", "Assets", "Icon", "PublishConfiguration.png"));
+            btnPublish.Image = LoadIcon("CascadeFields_PublishConfig.png");
             btnPublish.TextImageRelation = TextImageRelation.ImageBeforeText;            
             // 
             // splitContainerMain

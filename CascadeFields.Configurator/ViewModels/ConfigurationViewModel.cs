@@ -12,6 +12,7 @@ using CascadeFields.Configurator.Models.Session;
 using CascadeFields.Configurator.Models.UI;
 using CascadeFields.Configurator.Services;
 using Newtonsoft.Json;
+using Microsoft.Xrm.Sdk.Metadata;
 
 namespace CascadeFields.Configurator.ViewModels
 {
@@ -30,6 +31,7 @@ namespace CascadeFields.Configurator.ViewModels
         private readonly IMetadataService _metadataService;
         private readonly IConfigurationService _configurationService;
         private readonly ISettingsRepository _settingsRepository;
+        private readonly Action<string>? _log;
 
         public IConfigurationService ConfigurationService => _configurationService;
 
@@ -223,15 +225,17 @@ namespace CascadeFields.Configurator.ViewModels
         public ConfigurationViewModel(
             IMetadataService metadataService,
             IConfigurationService configurationService,
-            ISettingsRepository settingsRepository)
+            ISettingsRepository settingsRepository,
+            Action<string>? log = null)
         {
             _metadataService = metadataService ?? throw new ArgumentNullException(nameof(metadataService));
             _configurationService = configurationService ?? throw new ArgumentNullException(nameof(configurationService));
             _settingsRepository = settingsRepository ?? throw new ArgumentNullException(nameof(settingsRepository));
+            _log = log;
 
             // Initialize commands
             LoadSolutionsCommand = new AsyncRelayCommand(
-                LoadSolutionsAsync,
+                async _ => await LoadSolutionsAsync(true),
                 (o) => IsConnected && !IsLoading);
 
             AddRelationshipCommand = new AsyncRelayCommand(
@@ -283,16 +287,23 @@ namespace CascadeFields.Configurator.ViewModels
             ConnectionId = connectionId;
             IsConnected = true;
 
+            Log($"InitializeAsync start for connection {connectionId}");
+
             // Try to restore session
             var session = await _settingsRepository.LoadSessionAsync(connectionId);
             if (session?.IsValid == true)
             {
                 StatusMessage = "Restoring previous session...";
+                Log($"Restoring session for {connectionId}; last modified {session.LastModified:O}");
                 await RestoreSessionAsync(session);
             }
             else
             {
+                // No saved session - load solutions and auto-select Default Solution
+                StatusMessage = "Loading solutions...";
+                await LoadSolutionsAsync(true);
                 StatusMessage = "Ready. Click 'Retrieve Configured Entity' to get started.";
+                Log("No saved session found; loaded solutions fresh");
             }
         }
 
@@ -307,9 +318,10 @@ namespace CascadeFields.Configurator.ViewModels
         {
             try
             {
-                // Load solutions first
+                Log($"Restoring session: solution={session.SolutionUniqueName}, parent={session.ParentEntityLogicalName}, json length={session.ConfigurationJson?.Length ?? 0}");
+                // Load solutions first (don't auto-select Default - we'll restore the saved solution)
                 StatusMessage = "Loading solutions...";
-                await LoadSolutionsAsync(null);
+                await LoadSolutionsAsync(false);
 
                 if (Solutions.Count == 0)
                     return;
@@ -322,12 +334,14 @@ namespace CascadeFields.Configurator.ViewModels
                 // Load parent entities (triggered by SelectedSolution change)
                 await Task.Delay(500); // Wait for entities to load
 
-                // Select parent entity
-                SelectedParentEntity = ParentEntities.FirstOrDefault(
+                // Select parent entity directly (skip property setter to avoid OnParentEntityChangedAsync)
+                var parentEntity = ParentEntities.FirstOrDefault(
                     e => e.LogicalName == session.ParentEntityLogicalName);
-
-                if (SelectedParentEntity == null)
+                if (parentEntity == null)
                     return;
+
+                _selectedParentEntity = parentEntity;
+                OnPropertyChanged(nameof(SelectedParentEntity));
 
                 // Restore configuration from JSON
                 if (!string.IsNullOrWhiteSpace(session.ConfigurationJson))
@@ -336,10 +350,12 @@ namespace CascadeFields.Configurator.ViewModels
                 }
 
                 StatusMessage = "Session restored.";
+                Log("Session restore complete");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error restoring session: {ex.Message}");
+                Log($"Session restore error: {ex}");
                 StatusMessage = "Failed to restore session. Starting fresh.";
             }
         }
@@ -384,13 +400,15 @@ namespace CascadeFields.Configurator.ViewModels
         /// <summary>
         /// Loads all unmanaged solutions
         /// </summary>
-        private async Task LoadSolutionsAsync(object? parameter)
+        /// <param name="autoSelectDefault">If true and no solution is selected, auto-selects Default Solution</param>
+        private async Task LoadSolutionsAsync(bool autoSelectDefault)
         {
             if (IsLoading)
                 return;
 
             IsLoading = true;
             StatusMessage = "Loading solutions...";
+            Log($"LoadSolutionsAsync(autoSelectDefault: {autoSelectDefault})");
 
             try
             {
@@ -401,12 +419,32 @@ namespace CascadeFields.Configurator.ViewModels
                     Solutions.Add(solution);
                 }
 
-                StatusMessage = $"Loaded {solutions.Count} solutions.";
+                // Auto-select "Default" solution if requested and no solution is currently selected
+                if (autoSelectDefault && SelectedSolution == null && Solutions.Count > 0)
+                {
+                    var defaultSolution = Solutions.FirstOrDefault(s => s.UniqueName.Equals("Default", StringComparison.OrdinalIgnoreCase));
+                    if (defaultSolution != null)
+                    {
+                        SelectedSolution = defaultSolution;
+                        StatusMessage = $"Loaded {solutions.Count} solutions. Selected 'Default Solution'.";
+                        Log("Default solution auto-selected");
+                    }
+                    else
+                    {
+                        StatusMessage = $"Loaded {solutions.Count} solutions.";
+                    }
+                }
+                else
+                {
+                    StatusMessage = $"Loaded {solutions.Count} solutions.";
+                }
+                Log($"Solutions loaded: {solutions.Count}");
             }
             catch (Exception ex)
             {
                 StatusMessage = $"Error loading solutions: {ex.Message}";
                 Debug.WriteLine($"Error in LoadSolutionsAsync: {ex}");
+                Log($"Error loading solutions: {ex}");
             }
             finally
             {
@@ -422,11 +460,13 @@ namespace CascadeFields.Configurator.ViewModels
             if (SelectedSolution == null)
             {
                 ParentEntities.Clear();
+                Log("SelectedSolution cleared; ParentEntities cleared");
                 return;
             }
 
             IsLoading = true;
             StatusMessage = "Loading entities...";
+            Log($"OnSolutionChangedAsync -> {SelectedSolution.UniqueName}");
 
             try
             {
@@ -446,12 +486,14 @@ namespace CascadeFields.Configurator.ViewModels
                 }
 
                 StatusMessage = $"Loaded {entities.Count} entities.";
+                Log($"Entities loaded for solution {SelectedSolution.UniqueName}: {entities.Count}");
                 ScheduleSave();
             }
             catch (Exception ex)
             {
                 StatusMessage = $"Error loading entities: {ex.Message}";
                 Debug.WriteLine($"Error in OnSolutionChangedAsync: {ex}");
+                Log($"Error loading entities: {ex}");
             }
             finally
             {
@@ -467,23 +509,35 @@ namespace CascadeFields.Configurator.ViewModels
             RelationshipTabs.Clear();
             ConfigurationJson = string.Empty;
 
-            if (SelectedParentEntity == null)
+            var parentEntity = SelectedParentEntity;
+            if (parentEntity == null)
                 return;
+
+            var parentLogicalName = parentEntity.LogicalName ?? string.Empty;
+
+            Log($"Parent entity changed -> {parentEntity.LogicalName}");
 
             // Try to load existing configuration for this entity
             try
             {
                 var existingConfig = await _configurationService
-                    .GetConfigurationForParentEntityAsync(SelectedParentEntity.LogicalName);
+                    .GetConfigurationForParentEntityAsync(parentLogicalName);
 
                 if (!string.IsNullOrWhiteSpace(existingConfig))
                 {
-                    await ApplyConfigurationAsync(existingConfig);
+                    var configText = existingConfig!;
+                    Log($"Existing configuration found for {parentLogicalName}; length={configText.Length}");
+                    await ApplyConfigurationAsync(configText);
+                }
+                else
+                {
+                    Log($"No existing configuration for {parentLogicalName}");
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error loading existing configuration: {ex.Message}");
+                Log($"Error loading existing configuration: {ex}");
             }
 
             ScheduleSave();
@@ -501,32 +555,68 @@ namespace CascadeFields.Configurator.ViewModels
             if (string.IsNullOrWhiteSpace(json))
             {
                 StatusMessage = "No configuration found to apply.";
+                Log("ApplyConfigurationAsync called with empty json");
                 return;
             }
 
             try
             {
+                Log($"ApplyConfigurationAsync json length={json!.Length}");
                 var config = CascadeConfigurationModel.FromJson(json!);
 
-                // If parent entity not selected, try to select it from config
-                if (SelectedParentEntity == null || SelectedParentEntity.LogicalName != config.ParentEntity)
+                Log($"Parsed config: parent={config.ParentEntity}, related count={config.RelatedEntities.Count}");
+
+                // Check if parent entity exists in current solution
+                var parentEntity = ParentEntities.FirstOrDefault(e => e.LogicalName == config.ParentEntity);
+                
+                if (parentEntity == null)
                 {
-                    var parentEntity = ParentEntities.FirstOrDefault(e => e.LogicalName == config.ParentEntity);
-                    if (parentEntity != null)
+                    // Parent entity not in current solution - try switching to Default Solution
+                    var defaultSolution = Solutions.FirstOrDefault(s => s.UniqueName.Equals("Default", StringComparison.OrdinalIgnoreCase));
+                    if (defaultSolution != null && SelectedSolution?.UniqueName != defaultSolution.UniqueName)
                     {
-                        SelectedParentEntity = parentEntity;
-                        // Wait for async entity change to complete
-                        await Task.Delay(500);
+                        MessageBox.Show(
+                            $"Parent entity '{config.ParentEntity}' is not in the selected solution.\n\nSwitching to 'Default Solution' to load this configuration.",
+                            "Parent Entity Not Found",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Information);
+                        
+                        // Switch solution and wait for entities to load
+                        StatusMessage = "Switching to Default Solution...";
+                        _selectedSolution = defaultSolution;
+                        OnPropertyChanged(nameof(SelectedSolution));
+                        Log("Parent not in current solution; switching to Default");
+                        await OnSolutionChangedAsync();
+                        
+                        // Try again to find parent entity
+                        parentEntity = ParentEntities.FirstOrDefault(e => e.LogicalName == config.ParentEntity);
+                        if (parentEntity == null)
+                        {
+                            StatusMessage = $"Parent entity '{config.ParentEntity}' not found even in Default Solution.";
+                            Log(StatusMessage);
+                            return;
+                        }
                     }
                     else
                     {
                         StatusMessage = $"Parent entity '{config.ParentEntity}' not found in current solution.";
+                        Log(StatusMessage);
                         return;
                     }
                 }
 
+                // Set parent entity directly (skip property setter to avoid OnParentEntityChangedAsync 
+                // which would auto-load config from database - we handle loading ourselves)
+                _selectedParentEntity = parentEntity;
+                OnPropertyChanged(nameof(SelectedParentEntity));
+
                 // Clear existing tabs
                 RelationshipTabs.Clear();
+
+                // Load relationships once for this parent entity
+                var relationships = await _metadataService.GetChildRelationshipsAsync(config.ParentEntity);
+                Debug.WriteLine($"Loaded {relationships.Count} relationships for {config.ParentEntity}");
+                Log($"Child relationships loaded for {config.ParentEntity}: {relationships.Count}");
 
                 // Create tab for each related entity in config
                 foreach (var relatedEntity in config.RelatedEntities)
@@ -540,16 +630,30 @@ namespace CascadeFields.Configurator.ViewModels
                     await tabVm.InitializeAsync();
 
                     // Find and set the matching relationship
-                    if (!string.IsNullOrWhiteSpace(relatedEntity.RelationshipName))
+                    var matchingRelationship = ResolveRelationship(relatedEntity, relationships);
+                    if (matchingRelationship != null)
                     {
-                        var relationships = await _metadataService.GetChildRelationshipsAsync(config.ParentEntity);
-                        var matchingRelationship = relationships
-                            .FirstOrDefault(r => r.SchemaName == relatedEntity.RelationshipName);
-                        if (matchingRelationship != null)
+                        tabVm.SelectedRelationship = matchingRelationship;
+
+                        // Back-fill missing config details so JSON and UI are complete
+                        if (string.IsNullOrWhiteSpace(relatedEntity.RelationshipName))
                         {
-                            tabVm.SelectedRelationship = matchingRelationship;
-                            Debug.WriteLine($"Set relationship {matchingRelationship.SchemaName} for {relatedEntity.EntityName}");
+                            relatedEntity.RelationshipName = matchingRelationship.SchemaName;
+                            Log($"Inferred relationship {matchingRelationship.SchemaName} for {relatedEntity.EntityName}");
                         }
+
+                        if (string.IsNullOrWhiteSpace(relatedEntity.LookupFieldName))
+                        {
+                            relatedEntity.LookupFieldName = matchingRelationship.ReferencingAttribute;
+                            Log($"Inferred lookup field {matchingRelationship.ReferencingAttribute} for {relatedEntity.EntityName}");
+                        }
+
+                        Debug.WriteLine($"Set relationship {matchingRelationship.SchemaName} for {relatedEntity.EntityName}");
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"Warning: No relationship found for {relatedEntity.EntityName}");
+                        Log($"No relationship found for {relatedEntity.EntityName}; tab will use logical name only");
                     }
 
                     // Apply configuration to tab
@@ -564,10 +668,12 @@ namespace CascadeFields.Configurator.ViewModels
                     {
                         RelationshipTabs.Add(tabVm);
                         Debug.WriteLine($"Added tab for {relatedEntity.EntityName}");
+                        Log($"Tab added for {relatedEntity.EntityName}");
                     }
                     else
                     {
                         Debug.WriteLine($"Tab for {relatedEntity.EntityName} already exists, skipping duplicate.");
+                        Log($"Tab for {relatedEntity.EntityName} already exists; skipped duplicate");
                     }
                 }
 
@@ -577,11 +683,13 @@ namespace CascadeFields.Configurator.ViewModels
 
                 UpdateJsonPreview();
                 StatusMessage = $"Loaded configuration with {config.RelatedEntities.Count} relationship(s).";
+                Log(StatusMessage);
             }
             catch (Exception ex)
             {
                 StatusMessage = $"Error applying configuration: {ex.Message}";
                 Debug.WriteLine($"Error in ApplyConfigurationAsync: {ex}");
+                Log($"Error applying configuration: {ex}");
             }
             
             // Force UI refresh
@@ -768,7 +876,7 @@ namespace CascadeFields.Configurator.ViewModels
                 {
                     progress.Report("CascadeFields plugin is not registered.");
                     var result = System.Windows.Forms.MessageBox.Show(
-                        $"The CascadeFields plugin is not registered in this environment.\n\nFile Version: {status.fileVersion ?? "Unknown"}\n\nWould you like to register it now?",
+                        $"The CascadeFields plugin is not registered in this environment.\n\nAssembly Version: {status.assemblyVersion ?? "Unknown"}\nFile Version: {status.fileVersion ?? "Unknown"}\n\nWould you like to register it now?",
                         "Register Plugin",
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Question);
@@ -785,9 +893,9 @@ namespace CascadeFields.Configurator.ViewModels
                 // Plugin registered but needs update
                 if (status.needsUpdate)
                 {
-                    progress.Report($"Plugin version mismatch detected.");
+                        progress.Report($"Plugin version mismatch detected.");
                     var result = System.Windows.Forms.MessageBox.Show(
-                        $"The registered plugin version differs from the file version:\n\nRegistered: {status.registeredVersion ?? "Unknown"}\nFile: {status.fileVersion ?? "Unknown"}\n\nWould you like to update the plugin now?",
+                        $"The registered plugin version differs from the assembly version:\n\nRegistered: {status.registeredVersion ?? "Unknown"}\nAssembly: {status.assemblyVersion ?? "Unknown"}\nFile: {status.fileVersion ?? "Unknown"}\n\nWould you like to update the plugin now?",
                         "Update Plugin",
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Question);
@@ -936,6 +1044,230 @@ namespace CascadeFields.Configurator.ViewModels
                     .Select(t => t.ToRelatedEntityConfig())
                     .ToList()
             };
+        }
+
+        public async Task<(bool isValid, List<string> errors, List<string> warnings, List<(int componentType, Guid componentId, string description)> missingComponents)> ValidateConfigurationJsonAsync(string json, string? currentSolutionUniqueName)
+        {
+            var errors = new List<string>();
+            var warnings = new List<string>();
+            var missingComponents = new List<(int componentType, Guid componentId, string description)>();
+
+            CascadeConfigurationModel? config;
+            try
+            {
+                config = CascadeConfigurationModel.FromJson(json);
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Invalid JSON: {ex.Message}");
+                return (false, errors, warnings, missingComponents);
+            }
+
+            // Resolve solution membership for warnings
+            var solutionEntities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(currentSolutionUniqueName))
+            {
+                try
+                {
+                    var entitiesInSolution = await _metadataService.GetSolutionEntitiesAsync(currentSolutionUniqueName!);
+                    foreach (var em in entitiesInSolution)
+                    {
+                        solutionEntities.Add(em.LogicalName);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add($"Could not verify solution contents: {ex.Message}");
+                }
+            }
+
+            // Parent entity metadata
+            EntityMetadata? parentMeta = null;
+            try
+            {
+                parentMeta = await _metadataService.GetEntityMetadataAsync(config.ParentEntity);
+            }
+            catch
+            {
+                errors.Add($"Parent entity '{config.ParentEntity}' does not exist in this environment.");
+            }
+
+            if (parentMeta is not null && solutionEntities.Count > 0 && !solutionEntities.Contains(config.ParentEntity))
+            {
+                warnings.Add($"Parent entity '{config.ParentEntity}' is not in solution '{currentSolutionUniqueName}'. Add it to keep the solution compatible.");
+                if (parentMeta.MetadataId.HasValue)
+                    missingComponents.Add((1, parentMeta.MetadataId.Value, $"Entity: {config.ParentEntity}"));
+            }
+
+            // Cache parent attributes
+            var parentAttributes = parentMeta?.Attributes?.ToDictionary(a => a.LogicalName, StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, AttributeMetadata>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var related in config.RelatedEntities)
+            {
+                EntityMetadata? childMeta = null;
+                try
+                {
+                    childMeta = await _metadataService.GetEntityMetadataAsync(related.EntityName);
+                }
+                catch
+                {
+                    errors.Add($"Child entity '{related.EntityName}' does not exist in this environment.");
+                    continue;
+                }
+
+                if (childMeta is not null && solutionEntities.Count > 0 && !solutionEntities.Contains(related.EntityName))
+                {
+                    warnings.Add($"Child entity '{related.EntityName}' is not in solution '{currentSolutionUniqueName}'. Add it to keep the solution compatible.");
+                    if (childMeta.MetadataId.HasValue)
+                        missingComponents.Add((1, childMeta.MetadataId.Value, $"Entity: {related.EntityName}"));
+                }
+
+                var childAttributes = childMeta?.Attributes?.ToDictionary(a => a.LogicalName, StringComparer.OrdinalIgnoreCase) ?? new Dictionary<string, AttributeMetadata>(StringComparer.OrdinalIgnoreCase);
+
+                // Relationship validation
+                if (related.UseRelationship)
+                {
+                    var match = (parentMeta?.OneToManyRelationships ?? Array.Empty<OneToManyRelationshipMetadata>())
+                        .FirstOrDefault(r =>
+                            string.Equals(r.SchemaName, related.RelationshipName, StringComparison.OrdinalIgnoreCase) ||
+                            (string.Equals(r.ReferencingEntity, related.EntityName, StringComparison.OrdinalIgnoreCase) &&
+                             string.Equals(r.ReferencingAttribute, related.LookupFieldName, StringComparison.OrdinalIgnoreCase)));
+
+                    if (match == null)
+                    {
+                        errors.Add($"Relationship not found for child '{related.EntityName}'. Expected schema '{related.RelationshipName ?? "(unspecified)"}' or lookup '{related.LookupFieldName ?? "(unspecified)"}'.");
+                    }
+                    else if (solutionEntities.Count > 0 && childMeta is not null && !solutionEntities.Contains(related.EntityName))
+                    {
+                        if (match.MetadataId.HasValue)
+                            missingComponents.Add((3, match.MetadataId.Value, $"Relationship: {match.SchemaName}"));
+                    }
+                }
+                else
+                {
+                    if (string.IsNullOrWhiteSpace(related.LookupFieldName))
+                    {
+                        errors.Add($"Child '{related.EntityName}' requires lookupFieldName when useRelationship is false.");
+                    }
+                }
+
+                // Lookup field check
+                var lookupField = related.LookupFieldName;
+                if (!string.IsNullOrWhiteSpace(lookupField) && !childAttributes.ContainsKey(lookupField!))
+                {
+                    errors.Add($"Lookup field '{lookupField}' not found on child '{related.EntityName}'.");
+                }
+
+                // Field mappings
+                foreach (var mapping in related.FieldMappings)
+                {
+                    var sourceField = mapping.SourceField;
+                    var targetField = mapping.TargetField;
+
+                    if (string.IsNullOrWhiteSpace(sourceField) || string.IsNullOrWhiteSpace(targetField))
+                    {
+                        errors.Add($"Mapping is missing source or target field for child '{related.EntityName}'.");
+                        continue;
+                    }
+                    if (!parentAttributes.ContainsKey(sourceField))
+                    {
+                        errors.Add($"Source field '{sourceField}' not found on parent '{config.ParentEntity}'.");
+                    }
+                    if (!childAttributes.ContainsKey(targetField))
+                    {
+                        errors.Add($"Target field '{targetField}' not found on child '{related.EntityName}'.");
+                    }
+                    else if (childMeta is not null && solutionEntities.Count > 0 && !solutionEntities.Contains(related.EntityName))
+                    {
+                        var attr = childAttributes[targetField]!;
+                        if (attr.MetadataId.HasValue)
+                            missingComponents.Add((2, attr.MetadataId.Value, $"Field: {related.EntityName}.{targetField}"));
+                    }
+                }
+
+                // Filters
+                var filterCriteria = related.FilterCriteria ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(filterCriteria))
+                    continue;
+
+                var filters = filterCriteria.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var filter in filters)
+                {
+                    var fc = FilterCriterionModel.FromFilterString(filter);
+                    if (fc == null)
+                    {
+                        errors.Add($"Invalid filter format '{filter}' for child '{related.EntityName}'.");
+                        continue;
+                    }
+                    var fcField = fc.Field;
+                    if (string.IsNullOrWhiteSpace(fcField))
+                    {
+                        errors.Add($"Filter field is missing for child '{related.EntityName}'.");
+                    }
+                    else
+                    {
+                        var filterField = fcField!;
+                        if (!childAttributes.ContainsKey(filterField))
+                        {
+                            errors.Add($"Filter field '{filterField}' not found on child '{related.EntityName}'.");
+                        }
+                        else if (childMeta is not null && solutionEntities.Count > 0 && !solutionEntities.Contains(related.EntityName))
+                        {
+                            var attr = childAttributes[filterField];
+                            if (attr.MetadataId.HasValue)
+                                missingComponents.Add((2, attr.MetadataId.Value, $"Field: {related.EntityName}.{filterField}"));
+                        }
+                    }
+                }
+            }
+
+            return (!errors.Any(), errors, warnings, missingComponents);
+        }
+
+        private void Log(string message)
+        {
+            _log?.Invoke(message);
+            Debug.WriteLine(message);
+        }
+
+        /// <summary>
+        /// Attempts to resolve a relationship when the configuration is missing relationshipName
+        /// </summary>
+        private static RelationshipItem? ResolveRelationship(RelatedEntityConfigModel relatedEntity, IReadOnlyList<RelationshipItem> relationships)
+        {
+            if (relatedEntity == null || relationships == null)
+                return null;
+
+            // 1) Exact schema name match (if provided)
+            if (!string.IsNullOrWhiteSpace(relatedEntity.RelationshipName))
+            {
+                var matchBySchema = relationships.FirstOrDefault(r =>
+                    string.Equals(r.SchemaName, relatedEntity.RelationshipName, StringComparison.OrdinalIgnoreCase));
+                if (matchBySchema != null)
+                    return matchBySchema;
+            }
+
+            // 2) Match by child entity + lookup field
+            if (!string.IsNullOrWhiteSpace(relatedEntity.LookupFieldName))
+            {
+                var matchByLookup = relationships.FirstOrDefault(r =>
+                    string.Equals(r.ReferencingEntity, relatedEntity.EntityName, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(r.ReferencingAttribute, relatedEntity.LookupFieldName, StringComparison.OrdinalIgnoreCase));
+                if (matchByLookup != null)
+                    return matchByLookup;
+            }
+
+            // 3) If only one relationship exists for this child, use it
+            var candidates = relationships
+                .Where(r => string.Equals(r.ReferencingEntity, relatedEntity.EntityName, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            if (candidates.Count == 1)
+            {
+                return candidates[0];
+            }
+
+            return null;
         }
 
         #endregion

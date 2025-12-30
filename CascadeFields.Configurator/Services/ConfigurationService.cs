@@ -106,7 +106,17 @@ namespace CascadeFields.Configurator.Services
                     }
                 }
 
+                // Deduplicate by composite key (parent + child + lookup + relationship)
+                // since multiple steps may share the same configuration
                 return configured
+                    .GroupBy(c => new
+                    {
+                        c.ParentEntity,
+                        c.ChildEntity,
+                        c.LookupFieldName,
+                        c.RelationshipName
+                    })
+                    .Select(g => g.First())
                     .OrderBy(c => c.ParentEntity)
                     .ThenBy(c => c.ChildEntity)
                     .ToList();
@@ -317,18 +327,36 @@ namespace CascadeFields.Configurator.Services
             return results.Entities.Count > 0 ? (Guid?)results.Entities[0].Id : null;
         }
 
-        public (bool isRegistered, bool needsUpdate, string? registeredVersion, string? fileVersion) CheckPluginStatus(string assemblyPath)
+        public (bool isRegistered, bool needsUpdate, string? registeredVersion, string? assemblyVersion, string? fileVersion) CheckPluginStatus(string assemblyPath)
         {
             try
             {
                 var assemblyName = "CascadeFields.Plugin";
                 
-                // Get file version
+                // Get assembly and file versions from the plugin DLL
+                string? assemblyVersion = null;
                 string? fileVersion = null;
                 if (System.IO.File.Exists(assemblyPath))
                 {
-                    var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assemblyPath);
-                    fileVersion = versionInfo.FileVersion;
+                    try
+                    {
+                        var assemblyInfo = System.Reflection.AssemblyName.GetAssemblyName(assemblyPath);
+                        assemblyVersion = assemblyInfo?.Version?.ToString();
+                    }
+                    catch
+                    {
+                        // Fall back to file version if assembly version cannot be read
+                    }
+
+                    try
+                    {
+                        var versionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(assemblyPath);
+                        fileVersion = versionInfo.FileVersion;
+                    }
+                    catch
+                    {
+                        // Ignore file version read errors
+                    }
                 }
 
                 // Check if assembly is registered
@@ -342,7 +370,7 @@ namespace CascadeFields.Configurator.Services
 
                 if (results.Entities.Count == 0)
                 {
-                    return (false, false, null, fileVersion);
+                    return (false, false, null, assemblyVersion, fileVersion);
                 }
 
                 var assembly = results.Entities[0];
@@ -350,19 +378,45 @@ namespace CascadeFields.Configurator.Services
 
                 // Compare versions
                 bool needsUpdate = false;
-                if (!string.IsNullOrEmpty(fileVersion) && !string.IsNullOrEmpty(registeredVersion))
+                if (!string.IsNullOrWhiteSpace(assemblyVersion) && !string.IsNullOrWhiteSpace(registeredVersion))
                 {
-                    // Simple string comparison - could be enhanced with Version.Parse if needed
-                    needsUpdate = fileVersion != registeredVersion;
+                    // Compare Dataverse-registered assembly version with the assembly manifest version
+                    needsUpdate = !string.Equals(assemblyVersion, registeredVersion, StringComparison.Ordinal);
                 }
 
-                return (true, needsUpdate, registeredVersion, fileVersion);
+                return (true, needsUpdate, registeredVersion, assemblyVersion, fileVersion);
             }
             catch
             {
                 // If any error, assume not registered
-                return (false, false, null, null);
+                return (false, false, null, null, null);
             }
+        }
+
+        public Task AddComponentsToSolutionAsync(Guid solutionId, IEnumerable<(int componentType, Guid componentId, string description)> components, IProgress<string> progress)
+        {
+            return Task.Run(() =>
+            {
+                var distinct = components
+                    .Where(c => c.componentId != Guid.Empty)
+                    .Distinct()
+                    .ToList();
+
+                foreach (var c in distinct)
+                {
+                    if (!ComponentExistsInSolution(solutionId, c.componentType, c.componentId))
+                    {
+                        progress.Report($"Adding to solution: {c.description}");
+                        AddSolutionComponent(solutionId, c.componentType, c.componentId);
+                    }
+                    else
+                    {
+                        progress.Report($"Already in solution: {c.description}");
+                    }
+                }
+
+                progress.Report($"Solution component add complete ({distinct.Count} checked).");
+            });
         }
 
         private Guid? FindPluginTypeId(string typeName)

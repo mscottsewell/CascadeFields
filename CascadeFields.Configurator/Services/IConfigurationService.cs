@@ -53,7 +53,12 @@ namespace CascadeFields.Configurator.Services
         /// Checks the status of the CascadeFields plugin
         /// </summary>
         /// <param name="assemblyPath">Path to CascadeFields.Plugin.dll to compare version</param>
-        /// <returns>Tuple: (isRegistered, needsUpdate, registeredVersion, fileVersion)</returns>
-        (bool isRegistered, bool needsUpdate, string? registeredVersion, string? fileVersion) CheckPluginStatus(string assemblyPath);
+        /// <returns>Tuple: (isRegistered, needsUpdate, registeredVersion, assemblyVersion, fileVersion)</returns>
+        (bool isRegistered, bool needsUpdate, string? registeredVersion, string? assemblyVersion, string? fileVersion) CheckPluginStatus(string assemblyPath);
+
+        /// <summary>
+        /// Adds minimal components (entities/attributes/relationships) to a solution if missing
+        /// </summary>
+        Task AddComponentsToSolutionAsync(Guid solutionId, IEnumerable<(int componentType, Guid componentId, string description)> components, IProgress<string> progress);
     }
 }

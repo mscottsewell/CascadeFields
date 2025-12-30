@@ -4,6 +4,7 @@ param(
     [string]$NugetApiKey = $env:NUGET_API_KEY,
     [switch]$SkipPush,
     [switch]$SkipDeploy,
+    [switch]$SkipVersionBump,
     [string]$XrmToolBoxPluginsPath = "$env:APPDATA\MscrmTools\XrmToolBox\Plugins"
 )
 
@@ -52,11 +53,57 @@ function Ensure-NugetExe {
     return $nugetPath
 }
 
+function Update-ConfiguratorVersion {
+    param(
+        [string]$AssemblyInfoPath
+    )
+
+    if (-not (Test-Path $AssemblyInfoPath)) {
+        throw "AssemblyInfo not found at $AssemblyInfoPath"
+    }
+
+    $content = Get-Content -Path $AssemblyInfoPath -Raw
+    $assemblyVersionMatch = [regex]::Match($content, 'AssemblyVersion\("(?<ver>[^"]+)"\)')
+
+    if (-not $assemblyVersionMatch.Success) {
+        throw "AssemblyVersion attribute not found in $AssemblyInfoPath"
+    }
+
+    $currentVersion = $assemblyVersionMatch.Groups['ver'].Value
+
+    try {
+        $v = [Version]$currentVersion
+    } catch {
+        throw "Invalid version format '$currentVersion' in $AssemblyInfoPath"
+    }
+
+    $nextRevision = [Math]::Max(0, $v.Revision) + 1
+    $nextVersion = [Version]::new($v.Major, $v.Minor, $v.Build, $nextRevision)
+    $nextVersionString = "$($nextVersion.Major).$($nextVersion.Minor).$($nextVersion.Build).$($nextVersion.Revision)"
+
+    $content = $content -replace 'AssemblyVersion\("[^"]*"\)', "AssemblyVersion(`"$nextVersionString`")"
+    $content = $content -replace 'AssemblyFileVersion\("[^"]*"\)', "AssemblyFileVersion(`"$nextVersionString`")"
+
+    Set-Content -Path $AssemblyInfoPath -Value $content -Encoding ascii
+
+    Write-Info "Incremented Configurator version: $currentVersion -> $nextVersionString"
+
+    return $nextVersionString
+}
+
+$projDir = Join-Path $PSScriptRoot "CascadeFields.Configurator"
+$assemblyInfoPath = Join-Path $projDir "Properties/AssemblyInfo.cs"
+
+if (-not $SkipVersionBump) {
+    Update-ConfiguratorVersion -AssemblyInfoPath $assemblyInfoPath | Out-Null
+} else {
+    Write-Info "SkipVersionBump enabled; using existing AssemblyInfo version."
+}
+
 Write-Info "Restoring and building solution ($Configuration)..."
 & dotnet restore (Join-Path $PSScriptRoot "CascadeFields.sln")
 & dotnet build (Join-Path $PSScriptRoot "CascadeFields.sln") -c $Configuration
 
-$projDir = Join-Path $PSScriptRoot "CascadeFields.Configurator"
 $buildOutput = Join-Path $projDir "bin/$Configuration/net462"
 $assemblyPath = Join-Path $buildOutput "CascadeFields.Configurator.dll"
 $assetsPluginDir = Join-Path $projDir "Assets/DataversePlugin"
@@ -78,10 +125,14 @@ if ($version -like "*+*") {
     $version = $version.Split('+')[0]
 }
 
-# NuGet requires SemVer (three numeric segments). Trim a 4th segment if present.
+# Preserve 4th segment when present (NuGet accepts 4-part numeric versions)
 try {
     $v = [Version]$version
-    $version = "$($v.Major).$($v.Minor).$($v.Build)"
+    if ($v.Revision -ge 0) {
+        $version = "$($v.Major).$($v.Minor).$($v.Build).$($v.Revision)"
+    } else {
+        $version = "$($v.Major).$($v.Minor).$($v.Build)"
+    }
 } catch {
     # If parsing fails, leave as-is
 }

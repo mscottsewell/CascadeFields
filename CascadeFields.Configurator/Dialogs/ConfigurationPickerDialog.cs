@@ -76,7 +76,12 @@ namespace CascadeFields.Configurator.Dialogs
                 _listView.Items.Add(parentItem);
 
                 // Child rows (informational, selection maps back to parent)
-                foreach (var child in group.Children)
+                // Skip children without a relationship name to reduce noise; the parent row already represents them.
+                var childRows = group.Children
+                    .Where(c => !string.IsNullOrWhiteSpace(c.RelationshipName))
+                    .ToList();
+
+                foreach (var child in childRows)
                 {
                     var lookup = FormatField(child.LookupFieldName, child.LookupFieldDisplayName);
                     var schema = string.IsNullOrWhiteSpace(child.RelationshipName) ? string.Empty : child.RelationshipName;
