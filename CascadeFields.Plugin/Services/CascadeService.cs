@@ -13,14 +13,61 @@ using ModelCascadeConfiguration = CascadeFields.Plugin.Models.CascadeConfigurati
 namespace CascadeFields.Plugin.Services
 {
     /// <summary>
-    /// Service for executing cascade field operations
+    /// Core service responsible for executing field value cascades from parent records to related child records.
+    /// Handles both parent-side cascades (when parent updates) and child-side operations (when child is created or relinked).
     /// </summary>
+    /// <remarks>
+    /// <para><b>Key Responsibilities:</b></para>
+    /// <list type="bullet">
+    ///     <item><description><b>Parent-Side Cascades:</b> When a parent record is updated, cascade configured field values to all related child records</description></item>
+    ///     <item><description><b>Child-Side Operations:</b> When a child record is created or its parent lookup changes, copy parent field values to the child</description></item>
+    ///     <item><description><b>Trigger Field Logic:</b> Optimize cascades by only processing when configured trigger fields change</description></item>
+    ///     <item><description><b>Filter Criteria:</b> Support optional FetchXML-style filters to limit which child records are updated</description></item>
+    ///     <item><description><b>Batch Updates:</b> Use ExecuteMultiple for efficient bulk updates of child records</description></item>
+    ///     <item><description><b>Type Conversion:</b> Handle type conversions for lookups/optionsets to string fields with automatic truncation</description></item>
+    ///     <item><description><b>Metadata Caching:</b> Cache attribute metadata to optimize repeated field information lookups</description></item>
+    /// </list>
+    ///
+    /// <para><b>Performance Optimizations:</b></para>
+    /// <list type="number">
+    ///     <item><description>Attribute metadata is cached per-instance to reduce metadata query overhead</description></item>
+    ///     <item><description>Child record updates use ExecuteMultiple in batches of 50 for optimal throughput</description></item>
+    ///     <item><description>Queries retrieve only the ID field to minimize data transfer</description></item>
+    ///     <item><description>NoLock and TopCount=5000 safety limits prevent runaway queries</description></item>
+    /// </list>
+    ///
+    /// <para><b>Error Handling:</b></para>
+    /// All errors are logged via PluginTracer and re-thrown as InvalidPluginExecutionException with descriptive messages.
+    /// Batch update errors are logged individually but don't stop processing of other records (ContinueOnError=true).
+    /// </remarks>
     public class CascadeService
     {
+        /// <summary>
+        /// Dataverse organization service used for all data operations (retrieve, update, metadata queries).
+        /// </summary>
         private readonly IOrganizationService _service;
+
+        /// <summary>
+        /// Tracing service wrapper for diagnostic logging and performance monitoring.
+        /// </summary>
         private readonly PluginTracer _tracer;
+
+        /// <summary>
+        /// In-memory cache of attribute metadata to avoid repeated metadata queries for the same fields.
+        /// Key format: "entityname:attributename" (case-insensitive).
+        /// </summary>
         private readonly Dictionary<string, AttributeMetadata> _attributeMetadataCache;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CascadeService"/> class with required dependencies.
+        /// </summary>
+        /// <param name="service">The Dataverse organization service for data and metadata operations. Cannot be null.</param>
+        /// <param name="tracer">The plugin tracer for logging diagnostic information and performance metrics. Cannot be null.</param>
+        /// <exception cref="ArgumentNullException">Thrown if service or tracer is null.</exception>
+        /// <remarks>
+        /// The attribute metadata cache is initialized as an empty dictionary with case-insensitive string comparison.
+        /// Metadata is lazily loaded and cached as fields are encountered during cascade operations.
+        /// </remarks>
         public CascadeService(IOrganizationService service, PluginTracer tracer)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
@@ -29,13 +76,67 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Applies mapped values from parent to the current child record when the child is created
-        /// or when its parent lookup is (re)assigned. Uses the same mapping config; no duplicate child mappings required.
+        /// Applies configured field values from a parent record to a child record when the child is created or its parent lookup is changed.
+        /// This is the "child-side" operation that complements the parent-side cascade.
         /// </summary>
-        /// <param name="context">Plugin execution context to determine stage/message.</param>
-        /// <param name="target">The child entity from context.InputParameters["Target"]</param>
-        /// <param name="preImage">Optional pre image for update comparisons</param>
-        /// <param name="config">Cascade configuration</param>
+        /// <param name="context">
+        /// The plugin execution context containing message name, stage, and primary entity information.
+        /// Used to determine whether this is a Create or Update operation and the execution stage.
+        /// </param>
+        /// <param name="target">
+        /// The child entity being created or updated, from context.InputParameters["Target"].
+        /// For Create: Contains fields being set on the new record, including the parent lookup.
+        /// For Update: Contains only changed fields, potentially including a changed parent lookup.
+        /// </param>
+        /// <param name="preImage">
+        /// Optional pre-image entity for Update operations, used to detect if the parent lookup field changed.
+        /// Not available for Create operations (null).
+        /// </param>
+        /// <param name="config">
+        /// The cascade configuration defining parent entity, related entities, and field mappings.
+        /// This method finds child entity configs matching the current entity and applies their field mappings.
+        /// </param>
+        /// <remarks>
+        /// <para><b>Purpose:</b></para>
+        /// This method handles the scenario where a child record needs to receive parent field values at the moment
+        /// it's associated with a parent. This is different from parent-side cascades which update existing children
+        /// when the parent changes.
+        ///
+        /// <para><b>When to Register:</b></para>
+        /// Register on child entity Create (Pre-operation) and Update (Pre-operation) messages, filtered to the parent lookup field.
+        ///
+        /// <para><b>Execution Modes:</b></para>
+        /// <list type="bullet">
+        ///     <item>
+        ///         <description><b>Create:</b> If the child record includes a parent lookup on create, retrieve the parent
+        ///         and copy configured field values to the child.</description>
+        ///     </item>
+        ///     <item>
+        ///         <description><b>Update:</b> If the parent lookup field changes (child is relinked to a different parent),
+        ///         retrieve the new parent and copy its field values to the child.</description>
+        ///     </item>
+        /// </list>
+        ///
+        /// <para><b>Filter Criteria Support:</b></para>
+        /// If filterCriteria is specified in the related entity config, verifies the child record matches
+        /// the filter before applying mappings. This allows selective application based on child record state.
+        ///
+        /// <para><b>Pre-Operation vs Post-Operation:</b></para>
+        /// <list type="bullet">
+        ///     <item>
+        ///         <description><b>Pre-Operation (Stage 20 - Recommended):</b> Values are added directly to the target entity,
+        ///         so they're saved as part of the same transaction. This is the recommended approach.</description>
+        ///     </item>
+        ///     <item>
+        ///         <description><b>Post-Operation (Stage 40):</b> A separate Update call is made to set the values.
+        ///         This requires the child record to have an ID (not suitable for Create in Post-operation).</description>
+        ///     </item>
+        /// </list>
+        ///
+        /// <para><b>Multiple Related Configs:</b></para>
+        /// If multiple related entity configurations exist for the same child entity (e.g., different parent lookup fields),
+        /// values from all applicable configs are aggregated into a single update.
+        /// </remarks>
         public void ApplyParentValuesToChildOnAttachOrCreate(IPluginExecutionContext context, Entity target, Entity preImage, ModelCascadeConfiguration config)
         {
             _tracer.StartOperation("ApplyParentValuesToChildOnAttachOrCreate");
@@ -190,8 +291,19 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Determines whether the configured lookup on the child changed between pre-image and target.
+        /// Determines whether a lookup field on a child entity has changed during an Update operation.
+        /// Used to detect when a child record is being relinked to a different parent.
         /// </summary>
+        /// <param name="target">The entity being updated, containing only changed fields.</param>
+        /// <param name="preImage">The pre-image entity containing the field's previous value.</param>
+        /// <param name="lookupField">The logical name of the lookup field to check (e.g., "parentaccountid").</param>
+        /// <returns>
+        /// <c>true</c> if the lookup field is present in the target and its value differs from the pre-image;
+        /// otherwise, <c>false</c> (field not changed or not present in update).
+        /// </returns>
+        /// <remarks>
+        /// Uses <see cref="AreValuesEqual"/> for EntityReference comparison, which compares both Id and LogicalName.
+        /// </remarks>
         private bool HasLookupChanged(Entity target, Entity preImage, string lookupField)
         {
             if (!target.Contains(lookupField))
@@ -205,8 +317,26 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Verifies a single child row matches the optional filter criteria before applying mappings.
+        /// Verifies that a specific child record matches the optional filter criteria defined in the related entity configuration.
+        /// Used to determine if field mappings should be applied to a child record during Create or Update operations.
         /// </summary>
+        /// <param name="childEntityName">The logical name of the child entity (e.g., "contact").</param>
+        /// <param name="childId">The unique identifier of the child record to verify.</param>
+        /// <param name="relatedConfig">The related entity configuration containing optional filterCriteria.</param>
+        /// <returns>
+        /// <c>true</c> if the child record matches the filter criteria (or if no filter is specified);
+        /// <c>false</c> if the filter is specified and the child record doesn't match.
+        /// Returns <c>true</c> (permissive) if filter parsing fails to avoid blocking operations.
+        /// </returns>
+        /// <remarks>
+        /// <para><b>Query Strategy:</b></para>
+        /// Constructs a QueryExpression that filters on the child record's ID plus any configured filter criteria.
+        /// Uses NoLock and TopCount=1 for optimal performance.
+        ///
+        /// <para><b>Error Handling:</b></para>
+        /// If filter criteria parsing fails, logs a warning and returns true (permissive behavior)
+        /// to avoid blocking create/update operations due to configuration errors.
+        /// </remarks>
         private bool ChildMatchesFilter(string childEntityName, Guid childId, RelatedEntityConfig relatedConfig)
         {
             try
@@ -237,9 +367,29 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Checks if trigger fields for a single related entity changed in the current update.
-        /// Returns true when no trigger fields are defined, preserving legacy behavior for that mapping set.
+        /// Determines whether any trigger fields defined for a specific related entity configuration have changed in the current update.
+        /// Trigger fields are an optimization that prevents unnecessary cascades when unrelated fields are updated.
         /// </summary>
+        /// <param name="relatedEntity">The related entity configuration containing field mappings with potential trigger fields.</param>
+        /// <param name="target">The entity being updated, containing only changed fields.</param>
+        /// <param name="preImage">The pre-image entity containing the record's state before the update.</param>
+        /// <returns>
+        /// <c>true</c> if any trigger field changed, or if no trigger fields are configured (process all updates);
+        /// <c>false</c> if trigger fields are configured but none of them changed.
+        /// </returns>
+        /// <remarks>
+        /// <para><b>Trigger Field Logic:</b></para>
+        /// <list type="bullet">
+        ///     <item><description><b>No trigger fields configured:</b> Always returns true (cascade on every parent update)</description></item>
+        ///     <item><description><b>Trigger fields configured:</b> Returns true only if at least one trigger field changed</description></item>
+        ///     <item><description><b>Field present in target but not pre-image:</b> Considered changed (field was set during update)</description></item>
+        ///     <item><description><b>Field not in target:</b> Skipped (not part of this update operation)</description></item>
+        /// </list>
+        ///
+        /// <para><b>Performance Optimization:</b></para>
+        /// By marking specific fields as triggers, you can prevent cascades when unrelated fields change.
+        /// For example, if cascading address fields, mark them as triggers so cascades don't occur when "description" is updated.
+        /// </remarks>
         private bool HasTriggerFieldChanged(RelatedEntityConfig relatedEntity, Entity target, Entity preImage)
         {
             // Gather trigger fields defined for this related entity only
@@ -288,8 +438,40 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Cascades field values to related entities
+        /// Main entry point for parent-side cascade operations. When a parent record is updated, this method
+        /// cascades configured field values to all related child entities based on trigger field logic.
         /// </summary>
+        /// <param name="target">
+        /// The parent entity being updated, from context.InputParameters["Target"].
+        /// Contains only the fields that are being changed in this update operation.
+        /// </param>
+        /// <param name="preImage">
+        /// The pre-image of the parent entity containing the record's state before the update.
+        /// Used to compare old vs new values for trigger field detection.
+        /// Should be configured in the plugin step registration to include all trigger fields and mapped source fields.
+        /// </param>
+        /// <param name="config">
+        /// The cascade configuration defining which child entities receive updates and which fields are mapped.
+        /// </param>
+        /// <remarks>
+        /// <para><b>Execution Flow:</b></para>
+        /// <list type="number">
+        ///     <item><description>Iterate through each related entity configuration in the cascade config</description></item>
+        ///     <item><description>Check if any trigger fields changed for this specific related entity (optimization)</description></item>
+        ///     <item><description>If triggered, gather values to cascade by resolving field mappings from target/preImage</description></item>
+        ///     <item><description>Query for related child records (with optional filtering)</description></item>
+        ///     <item><description>Batch update child records using ExecuteMultiple</description></item>
+        /// </list>
+        ///
+        /// <para><b>Trigger Field Optimization:</b></para>
+        /// If any field mappings are marked as trigger fields, the cascade only occurs when at least one trigger field changes.
+        /// This prevents unnecessary child updates when unrelated parent fields are modified.
+        /// If no trigger fields are configured, cascades occur on every parent update.
+        ///
+        /// <para><b>Error Handling:</b></para>
+        /// All exceptions are logged via PluginTracer and re-thrown. The entire operation is wrapped in try-catch
+        /// to ensure proper logging and cleanup.
+        /// </remarks>
         public void CascadeFieldValues(Entity target, Entity preImage, ModelCascadeConfiguration config)
         {
             _tracer.StartOperation("CascadeFieldValues");
@@ -336,8 +518,28 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Builds a dictionary of target-field values for a specific related entity based on the mapping set.
+        /// Builds a dictionary of field values to cascade to child records for a specific related entity configuration.
+        /// Resolves source field values from the parent entity (preferring target over preImage) and maps them to target field names.
         /// </summary>
+        /// <param name="target">The parent entity being updated, containing changed fields.</param>
+        /// <param name="preImage">The pre-image of the parent entity, providing unchanged field values.</param>
+        /// <param name="relatedEntityConfig">
+        /// The related entity configuration containing field mappings that define which parent fields cascade to which child fields.
+        /// </param>
+        /// <returns>
+        /// A dictionary where keys are target (child) field names and values are the corresponding values from the parent.
+        /// Values are processed through <see cref="GetMappedValueForTarget"/> for type conversion and truncation.
+        /// </returns>
+        /// <remarks>
+        /// <para><b>Value Resolution Priority:</b></para>
+        /// For each field mapping, the method first checks the target entity for the source field value.
+        /// If not found in target, falls back to the preImage. This ensures both changed and unchanged
+        /// fields can be cascaded.
+        ///
+        /// <para><b>Type Conversion:</b></para>
+        /// Values are processed for type compatibility. Lookups and OptionSets targeting string fields
+        /// are converted to their text representations with automatic truncation if needed.
+        /// </remarks>
         private Dictionary<string, object> GetValuesToCascade(Entity target, Entity preImage, RelatedEntityConfig relatedEntityConfig)
         {
             var values = new Dictionary<string, object>();
@@ -363,8 +565,32 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Resolves the mapped value for a target field, performing type-aware conversions when needed.
+        /// Resolves and converts a source field value for assignment to a target field, handling type conversions for string/memo targets.
+        /// This is the key method that enables cascading lookups and optionsets to text fields.
         /// </summary>
+        /// <param name="sourceEntity">The parent entity containing the source field value.</param>
+        /// <param name="mapping">The field mapping defining source and target fields.</param>
+        /// <param name="targetEntityName">The logical name of the child entity (used for metadata lookup).</param>
+        /// <returns>
+        /// The value to assign to the target field, potentially converted and truncated based on target field metadata.
+        /// For string/memo targets: Converted to text representation with safe truncation.
+        /// For other types: Returns the raw value as-is.
+        /// </returns>
+        /// <remarks>
+        /// <para><b>Type Conversion Logic:</b></para>
+        /// <list type="bullet">
+        ///     <item><description><b>String/Memo Targets:</b> Converts EntityReference and OptionSetValue to readable text using FormattedValues or Name properties</description></item>
+        ///     <item><description><b>Other Targets:</b> Passes through the raw value unchanged</description></item>
+        /// </list>
+        ///
+        /// <para><b>Truncation Safety:</b></para>
+        /// For string/memo targets, automatically truncates values that exceed the target field's MaxLength.
+        /// Truncation adds an ellipsis character (…) and logs a warning for visibility.
+        ///
+        /// <para><b>Metadata Caching:</b></para>
+        /// Target field metadata is retrieved via <see cref="GetTargetAttributeMetadata"/> which caches results
+        /// to avoid repeated metadata queries for the same fields.
+        /// </remarks>
         private object GetMappedValueForTarget(Entity sourceEntity, FieldMapping mapping, string targetEntityName)
         {
             var mappedValue = sourceEntity[mapping.SourceField];
@@ -390,8 +616,24 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Retrieves and caches attribute metadata so type and length can guide conversions and truncation.
+        /// Retrieves attribute metadata for a target field and caches it for subsequent lookups.
+        /// Metadata is used to determine field type and length for safe type conversion and truncation.
         /// </summary>
+        /// <param name="entityLogicalName">The logical name of the entity containing the attribute.</param>
+        /// <param name="attributeLogicalName">The logical name of the attribute to retrieve metadata for.</param>
+        /// <returns>
+        /// The <see cref="AttributeMetadata"/> for the specified field, or <c>null</c> if metadata cannot be retrieved
+        /// or if parameters are null/empty.
+        /// </returns>
+        /// <remarks>
+        /// <para><b>Caching Strategy:</b></para>
+        /// Metadata is cached in <see cref="_attributeMetadataCache"/> using the key format "entityname:attributename".
+        /// Cache lookups are case-insensitive. Once cached, metadata is reused for all subsequent requests.
+        ///
+        /// <para><b>Error Handling:</b></para>
+        /// If metadata retrieval fails (e.g., field doesn't exist, insufficient permissions), logs a warning
+        /// and returns null. This allows the cascade to continue without metadata-driven optimizations.
+        /// </remarks>
         private AttributeMetadata GetTargetAttributeMetadata(string entityLogicalName, string attributeLogicalName)
         {
             if (string.IsNullOrWhiteSpace(entityLogicalName) || string.IsNullOrWhiteSpace(attributeLogicalName))
@@ -433,8 +675,27 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Converts a lookup/optionset/primitive value into a user-friendly string using formatted values when available.
+        /// Converts Dataverse data types (EntityReference, OptionSetValue, primitives) to user-friendly text representations.
+        /// Used when cascading non-string fields to string/memo fields.
         /// </summary>
+        /// <param name="rawValue">The raw value from the source field (EntityReference, OptionSetValue, or primitive type).</param>
+        /// <param name="formattedValue">
+        /// The formatted value from the entity's FormattedValues collection, if available.
+        /// Dataverse automatically populates FormattedValues with localized, user-friendly text for lookups and optionsets.
+        /// </param>
+        /// <returns>
+        /// A text representation of the value:
+        /// <list type="bullet">
+        ///     <item><description><b>EntityReference:</b> Name property, or FormattedValue, or Id.ToString() as fallback</description></item>
+        ///     <item><description><b>OptionSetValue:</b> FormattedValue (label), or Value.ToString() as fallback</description></item>
+        ///     <item><description><b>Other types:</b> rawValue.ToString()</description></item>
+        ///     <item><description><b>Null:</b> Returns null</description></item>
+        /// </list>
+        /// </returns>
+        /// <remarks>
+        /// This method enables scenarios like cascading a lookup field (customer) to a text field (customer_name).
+        /// The FormattedValue parameter provides localized, friendly text when available from the entity.
+        /// </remarks>
         private string ConvertToTextValue(object rawValue, string formattedValue)
         {
             if (rawValue == null) return null;
@@ -458,8 +719,32 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Applies safe truncation with ellipsis when the target attribute is length-constrained.
+        /// Safely truncates a text value if it exceeds the target field's maximum length, adding an ellipsis indicator.
+        /// Prevents "string or binary data would be truncated" errors during cascade operations.
         /// </summary>
+        /// <param name="textValue">The text value to potentially truncate.</param>
+        /// <param name="targetAttributeMetadata">
+        /// Metadata for the target field, used to determine if it's a string/memo field and its MaxLength.
+        /// </param>
+        /// <param name="targetAttributeLogicalName">The logical name of the target field (used for warning messages).</param>
+        /// <returns>
+        /// <list type="bullet">
+        ///     <item><description>Original value if it fits within MaxLength</description></item>
+        ///     <item><description>Truncated value with ellipsis (…) if it exceeds MaxLength</description></item>
+        ///     <item><description>Original value if target has no length restriction or metadata is unavailable</description></item>
+        /// </list>
+        /// </returns>
+        /// <remarks>
+        /// <para><b>Truncation Format:</b></para>
+        /// When truncation occurs, the value is shortened to (MaxLength - 1) characters and an ellipsis character (…) is appended.
+        /// Example: For MaxLength=10, "Hello World" becomes "Hello Wor…"
+        ///
+        /// <para><b>Logging:</b></para>
+        /// A warning is logged whenever truncation occurs, including the field name and max length.
+        ///
+        /// <para><b>Supported Field Types:</b></para>
+        /// Works with both String (single-line text) and Memo (multi-line text) field types.
+        /// </remarks>
         private string ApplyTruncationIfNeeded(string textValue, AttributeMetadata targetAttributeMetadata, string targetAttributeLogicalName)
         {
             if (string.IsNullOrEmpty(textValue) || targetAttributeMetadata == null)
@@ -582,9 +867,10 @@ namespace CascadeFields.Plugin.Services
             // This implementation falls back to direct lookup field query if relationship-based query fails.
             _tracer.Warning($"Using relationship-based query for '{relatedConfig.RelationshipName}'. Consider using UseRelationship=false with explicit LookupFieldName for better reliability.");
             
-            // Attempt to derive lookup field from relationship name
-            // This is a best-effort approach and may not work for all relationships
-            var lookupField = DetermineLookupFieldFromRelationship(relatedConfig.RelationshipName, config.ParentEntity);
+            // Prefer explicitly configured lookup when provided; fall back to heuristic
+            var lookupField = !string.IsNullOrWhiteSpace(relatedConfig.LookupFieldName)
+                ? relatedConfig.LookupFieldName
+                : DetermineLookupFieldFromRelationship(relatedConfig.RelationshipName, config.ParentEntity);
             
             if (string.IsNullOrWhiteSpace(lookupField))
             {
@@ -756,8 +1042,29 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Updates related records in batches using ExecuteMultipleRequest for better performance
+        /// Updates all related child records with cascaded field values using batched ExecuteMultiple requests for optimal performance.
+        /// Processes records in batches of 50 to balance throughput and transaction size.
         /// </summary>
+        /// <param name="relatedRecords">The list of child entity records to update (contains only IDs, retrieved with minimal columnset).</param>
+        /// <param name="values">
+        /// Dictionary of field values to apply to each child record.
+        /// Keys are field logical names, values are the data to set.
+        /// </param>
+        /// <remarks>
+        /// <para><b>Batch Strategy:</b></para>
+        /// <list type="bullet">
+        ///     <item><description><b>Batch Size:</b> 50 records per ExecuteMultiple request (optimal balance for performance)</description></item>
+        ///     <item><description><b>ContinueOnError:</b> Enabled, so one failing record doesn't stop the entire batch</description></item>
+        ///     <item><description><b>Progress Logging:</b> Logs progress after each batch for visibility</description></item>
+        /// </list>
+        ///
+        /// <para><b>Performance Benefits:</b></para>
+        /// ExecuteMultiple reduces round trips to the server. Updating 200 records becomes 4 requests instead of 200.
+        ///
+        /// <para><b>Error Handling:</b></para>
+        /// Errors for individual records are logged separately with record ID and error message.
+        /// Successful and failed counts are tracked and reported in the final summary.
+        /// </remarks>
         private void UpdateRelatedRecordsBatch(List<Entity> relatedRecords, Dictionary<string, object> values)
         {
             const int batchSize = 50; // Optimal batch size for ExecuteMultiple
@@ -795,8 +1102,29 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Executes a batch of update requests using ExecuteMultipleRequest
+        /// Executes a single batch of update requests using ExecuteMultipleRequest and returns success/error counts.
+        /// Configured with ContinueOnError=true so individual failures don't stop the batch.
         /// </summary>
+        /// <param name="requests">Collection of UpdateRequest objects to execute in a single batch.</param>
+        /// <returns>
+        /// A tuple containing:
+        /// <list type="bullet">
+        ///     <item><description><b>SuccessCount:</b> Number of requests that completed successfully</description></item>
+        ///     <item><description><b>ErrorCount:</b> Number of requests that failed</description></item>
+        /// </list>
+        /// If the entire ExecuteMultiple call fails, returns (0, requests.Count).
+        /// </returns>
+        /// <remarks>
+        /// <para><b>ExecuteMultiple Settings:</b></para>
+        /// <list type="bullet">
+        ///     <item><description><b>ContinueOnError = true:</b> Process all requests even if some fail</description></item>
+        ///     <item><description><b>ReturnResponses = true:</b> Get detailed results for each request to log errors</description></item>
+        /// </list>
+        ///
+        /// <para><b>Error Logging:</b></para>
+        /// Each failed request is logged with its record ID and error message for troubleshooting.
+        /// Successful requests are counted but not individually logged (to reduce log verbosity).
+        /// </remarks>
         private (int SuccessCount, int ErrorCount) ExecuteBatch(OrganizationRequestCollection requests)
         {
             if (requests.Count == 0)

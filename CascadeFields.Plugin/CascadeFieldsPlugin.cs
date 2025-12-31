@@ -7,27 +7,95 @@ using System;
 namespace CascadeFields.Plugin
 {
     /// <summary>
-    /// Plugin that cascades field values from a parent record to related child records
-    /// Parent-side: Register on Update, Post-operation (async recommended)
-    /// Child-side: Register on Create (Pre-operation) and Update (Pre-operation) filtered on the configured lookup field
+    /// Main plugin implementation that automatically cascades field values from parent records to related child records in Microsoft Dataverse.
     /// </summary>
+    /// <remarks>
+    /// <para><b>Execution Modes:</b></para>
+    /// <list type="bullet">
+    ///     <item>
+    ///         <term>Parent Mode</term>
+    ///         <description>Triggered when the parent entity is updated. Cascades configured field values to all related child records.
+    ///         Register on <b>Update</b> message, <b>Post-operation</b> stage (Stage 40), <b>Asynchronous</b> mode recommended for performance.</description>
+    ///     </item>
+    ///     <item>
+    ///         <term>Child Mode</term>
+    ///         <description>Triggered when a child record is created or the lookup field is changed. Copies field values from the parent at the moment of association.
+    ///         Register on <b>Create</b> and <b>Update</b> messages, <b>Pre-operation</b> stage (Stage 20), <b>Synchronous</b> mode required.
+    ///         Add filtering attributes to include only the lookup field that references the parent entity.</description>
+    ///     </item>
+    /// </list>
+    /// <para><b>Configuration:</b></para>
+    /// Configuration is provided as JSON in the plugin's Unsecure Configuration during step registration.
+    /// The configuration defines the parent entity, related child entities, field mappings, and optional filters.
+    /// Use the CascadeFields Configurator tool (XrmToolBox plugin) to generate and publish configurations.
+    ///
+    /// <para><b>Recursion Prevention:</b></para>
+    /// The plugin implements depth checking (max depth: 2) to prevent infinite loops if cascades trigger additional updates.
+    /// If depth exceeds 2, execution is automatically terminated with a warning.
+    ///
+    /// <para><b>Error Handling:</b></para>
+    /// All errors are wrapped in InvalidPluginExecutionException with descriptive messages.
+    /// Detailed error information is logged to the plugin trace log.
+    /// </remarks>
+    /// <example>
+    /// Example registration for parent-side cascade (Account to Contact):
+    /// <code>
+    /// Message: Update
+    /// Primary Entity: account
+    /// Stage: Post-operation (40)
+    /// Execution Mode: Asynchronous
+    /// Unsecure Configuration: [JSON configuration with field mappings]
+    /// </code>
+    /// </example>
     public class CascadeFieldsPlugin : IPlugin
     {
+        /// <summary>
+        /// Stores the JSON configuration that defines cascade behavior, loaded from plugin step registration.
+        /// </summary>
         private readonly string _unsecureConfiguration;
 
         /// <summary>
-        /// Constructor for plugin registration
+        /// Initializes a new instance of the CascadeFieldsPlugin with configuration settings.
+        /// This constructor is called automatically by the Dataverse platform when the plugin step executes.
         /// </summary>
-        /// <param name="unsecureConfiguration">Configuration JSON containing cascade rules</param>
-        /// <param name="secureConfiguration">Secure configuration (not used currently)</param>
+        /// <param name="unsecureConfiguration">
+        /// JSON string containing the cascade configuration (parent entity, child entities, field mappings, filters).
+        /// This configuration is stored in the plugin step's Unsecure Configuration field and is visible to all users.
+        /// Generate this JSON using the CascadeFields Configurator tool.
+        /// </param>
+        /// <param name="secureConfiguration">
+        /// Secure configuration string (currently unused). Reserved for future use with sensitive data that should only be visible to administrators.
+        /// </param>
         public CascadeFieldsPlugin(string unsecureConfiguration, string secureConfiguration)
         {
             _unsecureConfiguration = unsecureConfiguration;
         }
 
         /// <summary>
-        /// Main plugin execution method
+        /// Main plugin execution method called by the Dataverse platform when a configured message and entity trigger the plugin.
         /// </summary>
+        /// <param name="serviceProvider">
+        /// Service provider that provides access to platform services including:
+        /// - ITracingService for diagnostic logging
+        /// - IPluginExecutionContext for execution context information (message, entity, stage, depth, etc.)
+        /// - IOrganizationServiceFactory for creating service instances to interact with Dataverse
+        /// </param>
+        /// <exception cref="InvalidPluginExecutionException">
+        /// Thrown when configuration is invalid, cascade operations fail, or unexpected errors occur.
+        /// Exception messages are logged to the plugin trace log and surfaced to the user.
+        /// </exception>
+        /// <remarks>
+        /// <para><b>Execution Flow:</b></para>
+        /// <list type="number">
+        ///     <item>Initialize services and logging (IOrganizationService, PluginTracer)</item>
+        ///     <item>Check execution depth to prevent infinite recursion (max: 2)</item>
+        ///     <item>Load and validate JSON configuration from unsecure configuration</item>
+        ///     <item>Verify configuration applies to the current entity (parent or child)</item>
+        ///     <item>Retrieve target entity and pre-image from execution context</item>
+        ///     <item>Determine execution mode (Parent Update or Child Create/Update)</item>
+        ///     <item>Execute appropriate cascade logic via CascadeService</item>
+        /// </list>
+        /// </remarks>
         public void Execute(IServiceProvider serviceProvider)
         {
             // Obtain services
@@ -127,8 +195,18 @@ namespace CascadeFields.Plugin
         }
 
         /// <summary>
-        /// Validates the execution context
+        /// Determines if the specified entity is configured as a child entity in the cascade configuration.
+        /// Used to identify when the plugin is executing in "child mode" vs "parent mode".
         /// </summary>
+        /// <param name="config">The loaded cascade configuration containing all related entity definitions.</param>
+        /// <param name="entityName">The logical name of the entity to check (e.g., "contact", "opportunity").</param>
+        /// <returns>
+        /// <c>true</c> if the entity is defined as a related/child entity in the configuration; otherwise, <c>false</c>.
+        /// </returns>
+        /// <remarks>
+        /// This method performs a case-insensitive comparison against all entity names in the RelatedEntities collection.
+        /// If the configuration is null or has no related entities, this method returns false.
+        /// </remarks>
         private bool IsChildEntity(CascadeConfiguration config, string entityName)
         {
             if (config?.RelatedEntities == null) return false;
@@ -143,8 +221,20 @@ namespace CascadeFields.Plugin
         }
 
         /// <summary>
-        /// Retrieves the target entity from context
+        /// Retrieves the target entity from the plugin execution context's input parameters.
+        /// The target entity represents the record being created, updated, or operated on.
         /// </summary>
+        /// <param name="context">The plugin execution context containing input parameters.</param>
+        /// <param name="tracer">The tracer instance for logging diagnostic information.</param>
+        /// <returns>
+        /// The target <see cref="Entity"/> if present in InputParameters; otherwise, <c>null</c>.
+        /// For Create operations, the target contains only the fields being set.
+        /// For Update operations, the target contains only the fields being changed.
+        /// </returns>
+        /// <remarks>
+        /// The target entity is available in the "Target" key of InputParameters for Create, Update, and Delete messages.
+        /// For Update operations, combine with the PreImage to get the complete record state (changed + unchanged fields).
+        /// </remarks>
         private Entity GetTarget(IPluginExecutionContext context, PluginTracer tracer)
         {
             if (context.InputParameters.Contains("Target") && context.InputParameters["Target"] is Entity target)
@@ -157,8 +247,25 @@ namespace CascadeFields.Plugin
         }
 
         /// <summary>
-        /// Retrieves the pre-image from context
+        /// Retrieves the pre-image entity from the plugin execution context.
+        /// The pre-image represents the state of the record before the current operation.
         /// </summary>
+        /// <param name="context">The plugin execution context containing pre-entity images.</param>
+        /// <param name="tracer">The tracer instance for logging diagnostic information.</param>
+        /// <returns>
+        /// The pre-image <see cref="Entity"/> if configured and present in PreEntityImages with the key "PreImage"; otherwise, <c>null</c>.
+        /// </returns>
+        /// <remarks>
+        /// <para><b>Pre-Image Configuration:</b></para>
+        /// Pre-images must be explicitly configured when registering the plugin step.
+        /// The image alias must be set to "PreImage" (case-sensitive) for this method to retrieve it.
+        /// Include all fields that are used in trigger field logic or that need to be compared against changed values.
+        ///
+        /// <para><b>Usage:</b></para>
+        /// Pre-images are primarily used in Update operations to access the complete record state before changes.
+        /// This allows the plugin to determine which fields changed and what their previous values were.
+        /// For Create operations, pre-images are not available (returns null).
+        /// </remarks>
         private Entity GetPreImage(IPluginExecutionContext context, PluginTracer tracer)
         {
             if (context.PreEntityImages.Contains("PreImage"))
