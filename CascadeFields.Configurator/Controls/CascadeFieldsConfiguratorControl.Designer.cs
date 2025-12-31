@@ -152,7 +152,7 @@ namespace CascadeFields.Configurator.Controls
             btnAddChildRelationship.Margin = new Padding(4);
             btnAddChildRelationship.FlatAppearance.BorderSize = 0;
             btnAddChildRelationship.UseVisualStyleBackColor = true;
-            btnAddChildRelationship.Image = LoadIcon("CascadeFields_AddRelationship.png");
+            btnAddChildRelationship.Image = LoadIcon("CascadeFields_AddRelationship_24.png");
             btnAddChildRelationship.TextImageRelation = TextImageRelation.ImageBeforeText;
             // 
             // btnRemoveRelationship
@@ -163,7 +163,7 @@ namespace CascadeFields.Configurator.Controls
             btnRemoveRelationship.Margin = new Padding(4);
             btnRemoveRelationship.FlatAppearance.BorderSize = 0;
             btnRemoveRelationship.UseVisualStyleBackColor = true;
-            btnRemoveRelationship.Image = LoadIcon("CascadeFields_RemoveRelationship.png");
+            btnRemoveRelationship.Image = LoadIcon("CascadeFields_RemoveRelationship_24.png");
             btnRemoveRelationship.TextImageRelation = TextImageRelation.ImageBeforeText;
             // 
             // btnRetrieveConfigured
@@ -174,7 +174,7 @@ namespace CascadeFields.Configurator.Controls
             btnRetrieveConfigured.Margin = new Padding(4);
             btnRetrieveConfigured.FlatAppearance.BorderSize = 0;
             btnRetrieveConfigured.UseVisualStyleBackColor = true;
-            btnRetrieveConfigured.Image = LoadIcon("CascadeFields_LoadConfig.png");
+            btnRetrieveConfigured.Image = LoadIcon("CascadeFields_LoadConfig_24.png");
             btnRetrieveConfigured.TextImageRelation = TextImageRelation.ImageBeforeText;
 
             // btnExportJson
@@ -184,7 +184,7 @@ namespace CascadeFields.Configurator.Controls
             btnExportJson.Margin = new Padding(4);
             btnExportJson.FlatAppearance.BorderSize = 0;
             btnExportJson.UseVisualStyleBackColor = true;
-            btnExportJson.Image = LoadIcon("CascadeFields_SaveJSON.png");
+            btnExportJson.Image = LoadIcon("CascadeFields_SaveJSON_24.png");
             btnExportJson.TextImageRelation = TextImageRelation.ImageBeforeText;
 
             // btnImportJson
@@ -194,7 +194,7 @@ namespace CascadeFields.Configurator.Controls
             btnImportJson.Margin = new Padding(4);
             btnImportJson.FlatAppearance.BorderSize = 0;
             btnImportJson.UseVisualStyleBackColor = true;
-            btnImportJson.Image = LoadIcon("CascadeFields_LoadJSON.png");
+            btnImportJson.Image = LoadIcon("CascadeFields_LoadJSON_24.png");
             btnImportJson.TextImageRelation = TextImageRelation.ImageBeforeText;
             // 
             // btnPublish
@@ -205,7 +205,7 @@ namespace CascadeFields.Configurator.Controls
             btnPublish.Margin = new Padding(4);
             btnPublish.FlatAppearance.BorderSize = 0;
             btnPublish.UseVisualStyleBackColor = true;
-            btnPublish.Image = LoadIcon("CascadeFields_PublishConfig.png");
+            btnPublish.Image = LoadIcon("CascadeFields_PublishConfig_24.png");
             btnPublish.TextImageRelation = TextImageRelation.ImageBeforeText;            
             // 
             // splitContainerMain
