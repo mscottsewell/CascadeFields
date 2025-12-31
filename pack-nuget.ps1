@@ -96,11 +96,52 @@ function Update-ConfiguratorVersion {
     return $nextVersionString
 }
 
+function Update-PluginFileVersion {
+    param(
+        [string]$AssemblyInfoPath
+    )
+
+    if (-not (Test-Path $AssemblyInfoPath)) {
+        throw "AssemblyInfo not found at $AssemblyInfoPath"
+    }
+
+    $content = Get-Content -Path $AssemblyInfoPath -Raw
+
+    $fileVersionMatch = [regex]::Match($content, 'AssemblyFileVersion\("(?<ver>[^"]+)"\)')
+    if (-not $fileVersionMatch.Success) {
+        throw "AssemblyFileVersion attribute not found in $AssemblyInfoPath"
+    }
+
+    $currentFileVersion = $fileVersionMatch.Groups['ver'].Value
+
+    try {
+        $v = [Version]$currentFileVersion
+    } catch {
+        throw "Invalid file version format '$currentFileVersion' in $AssemblyInfoPath"
+    }
+
+    $nextRevision = [Math]::Max(0, $v.Revision) + 1
+    $nextVersion = [Version]::new($v.Major, $v.Minor, $v.Build, $nextRevision)
+    $nextVersionString = "$($nextVersion.Major).$($nextVersion.Minor).$($nextVersion.Build).$($nextVersion.Revision)"
+
+    # Preserve AssemblyVersion; only bump AssemblyFileVersion
+    $content = $content -replace 'AssemblyFileVersion\("[^"]*"\)', "AssemblyFileVersion(`"$nextVersionString`")"
+
+    Set-Content -Path $AssemblyInfoPath -Value $content -Encoding ascii
+
+    Write-Info "Incremented Plugin file version: $currentFileVersion -> $nextVersionString"
+
+    return $nextVersionString
+}
+
 $projDir = Join-Path $PSScriptRoot "CascadeFields.Configurator"
 $assemblyInfoPath = Join-Path $projDir "Properties/AssemblyInfo.cs"
+$pluginProjDir = Join-Path $PSScriptRoot "CascadeFields.Plugin"
+$pluginAssemblyInfoPath = Join-Path $pluginProjDir "Properties/AssemblyInfo.cs"
 
 if (-not $SkipVersionBump) {
     Update-ConfiguratorVersion -AssemblyInfoPath $assemblyInfoPath | Out-Null
+    Update-PluginFileVersion -AssemblyInfoPath $pluginAssemblyInfoPath | Out-Null
 } else {
     Write-Info "SkipVersionBump enabled; using existing AssemblyInfo version."
 }

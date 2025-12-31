@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -131,6 +132,34 @@ namespace CascadeFields.Configurator.Services
                 var config = configurations.FirstOrDefault(c => 
                     c.ParentEntity == parentEntityLogicalName);
                 return config?.RawJson;
+            });
+        }
+
+        public Task DeleteRelationshipStepsAsync(string parentEntityLogicalName, IEnumerable<RelatedEntityConfigModel> relationships, IProgress<string> progress)
+        {
+            return Task.Run(() =>
+            {
+                var toDelete = relationships?.ToList() ?? new List<RelatedEntityConfigModel>();
+                if (!toDelete.Any())
+                    return;
+
+                var pluginTypeId = FindPluginTypeId("CascadeFields.Plugin.CascadeFieldsPlugin");
+                if (!pluginTypeId.HasValue)
+                {
+                    progress.Report("CascadeFields plugin type not found; skipping delete of removed relationships.");
+                    return;
+                }
+
+                foreach (var related in toDelete)
+                {
+                    var createStepName = $"CascadeFields (Child Create): {related.EntityName}";
+                    var relinkStepName = $"CascadeFields (Child Relink): {related.EntityName}";
+
+                    DeleteStepByName(createStepName, pluginTypeId.Value, progress);
+                    DeleteStepByName(relinkStepName, pluginTypeId.Value, progress);
+                }
+
+                progress.Report($"Removed {toDelete.Count} relationship(s) for parent '{parentEntityLogicalName}'.");
             });
         }
 
@@ -327,7 +356,7 @@ namespace CascadeFields.Configurator.Services
             return results.Entities.Count > 0 ? (Guid?)results.Entities[0].Id : null;
         }
 
-        public (bool isRegistered, bool needsUpdate, string? registeredVersion, string? assemblyVersion, string? fileVersion) CheckPluginStatus(string assemblyPath)
+        public (bool isRegistered, bool needsUpdate, string? registeredVersion, string? assemblyVersion, string? fileVersion, string? registeredFileVersion) CheckPluginStatus(string assemblyPath)
         {
             try
             {
@@ -362,7 +391,7 @@ namespace CascadeFields.Configurator.Services
                 // Check if assembly is registered
                 var query = new QueryExpression("pluginassembly")
                 {
-                    ColumnSet = new ColumnSet("pluginassemblyid", "name", "version"),
+                    ColumnSet = new ColumnSet("pluginassemblyid", "name", "version", "content"),
                     Criteria = new FilterExpression()
                 };
                 query.Criteria.AddCondition("name", ConditionOperator.Equal, assemblyName);
@@ -370,11 +399,39 @@ namespace CascadeFields.Configurator.Services
 
                 if (results.Entities.Count == 0)
                 {
-                    return (false, false, null, assemblyVersion, fileVersion);
+                    return (false, false, null, assemblyVersion, fileVersion, null);
                 }
 
                 var assembly = results.Entities[0];
                 var registeredVersion = assembly.Contains("version") ? assembly.GetAttributeValue<string>("version") : null;
+
+                string? registeredFileVersion = null;
+                if (assembly.Contains("content"))
+                {
+                    try
+                    {
+                        var content = assembly.GetAttributeValue<string>("content");
+                        if (!string.IsNullOrWhiteSpace(content))
+                        {
+                            var bytes = Convert.FromBase64String(content);
+                            var tempPath = Path.Combine(Path.GetTempPath(), $"CascadeFields.Plugin.{Guid.NewGuid():N}.dll");
+                            System.IO.File.WriteAllBytes(tempPath, bytes);
+                            try
+                            {
+                                var regVersionInfo = System.Diagnostics.FileVersionInfo.GetVersionInfo(tempPath);
+                                registeredFileVersion = regVersionInfo.FileVersion;
+                            }
+                            finally
+                            {
+                                try { System.IO.File.Delete(tempPath); } catch { /* best effort */ }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore errors reading registered file version
+                    }
+                }
 
                 // Compare versions
                 bool needsUpdate = false;
@@ -384,12 +441,17 @@ namespace CascadeFields.Configurator.Services
                     needsUpdate = !string.Equals(assemblyVersion, registeredVersion, StringComparison.Ordinal);
                 }
 
-                return (true, needsUpdate, registeredVersion, assemblyVersion, fileVersion);
+                if (!needsUpdate && !string.IsNullOrWhiteSpace(fileVersion) && !string.IsNullOrWhiteSpace(registeredFileVersion))
+                {
+                    needsUpdate = !string.Equals(fileVersion, registeredFileVersion, StringComparison.Ordinal);
+                }
+
+                return (true, needsUpdate, registeredVersion, assemblyVersion, fileVersion, registeredFileVersion);
             }
             catch
             {
                 // If any error, assume not registered
-                return (false, false, null, null, null);
+                return (false, false, null, null, null, null);
             }
         }
 
@@ -789,6 +851,27 @@ namespace CascadeFields.Configurator.Services
             }
 
             return id;
+        }
+
+        private void DeleteStepByName(string stepName, Guid pluginTypeId, IProgress<string> progress)
+        {
+            var query = new QueryExpression("sdkmessageprocessingstep")
+            {
+                ColumnSet = new ColumnSet("sdkmessageprocessingstepid")
+            };
+
+            query.Criteria.AddCondition("name", ConditionOperator.Equal, stepName);
+            query.Criteria.AddCondition("plugintypeid", ConditionOperator.Equal, pluginTypeId);
+
+            var existing = _service.RetrieveMultiple(query).Entities.FirstOrDefault();
+            if (existing == null)
+            {
+                progress.Report($"No plugin step found for '{stepName}'.");
+                return;
+            }
+
+            _service.Delete("sdkmessageprocessingstep", existing.Id);
+            progress.Report($"Deleted plugin step '{stepName}'.");
         }
 
         private string? ResolveLookupField(RelatedEntityConfigModel related, CascadeConfigurationModel? config)

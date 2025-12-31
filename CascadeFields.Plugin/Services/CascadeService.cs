@@ -237,62 +237,53 @@ namespace CascadeFields.Plugin.Services
         }
 
         /// <summary>
-        /// Checks if any trigger fields have changed
+        /// Checks if trigger fields for a single related entity changed in the current update.
+        /// Returns true when no trigger fields are defined, preserving legacy behavior for that mapping set.
         /// </summary>
-        public bool HasTriggerFieldChanged(Entity target, Entity preImage, ModelCascadeConfiguration config)
+        private bool HasTriggerFieldChanged(RelatedEntityConfig relatedEntity, Entity target, Entity preImage)
         {
-            _tracer.StartOperation("HasTriggerFieldChanged");
+            // Gather trigger fields defined for this related entity only
+            var triggerFields = relatedEntity.FieldMappings?
+                .Where(m => m.IsTriggerField)
+                .Select(m => m.SourceField)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList() ?? new List<string>();
 
-            // Collect all unique trigger fields from all related entities
-            var triggerFields = new HashSet<string>();
-            foreach (var relatedEntity in config.RelatedEntities)
-            {
-                if (relatedEntity.FieldMappings != null)
-                {
-                    foreach (var mapping in relatedEntity.FieldMappings.Where(m => m.IsTriggerField))
-                    {
-                        triggerFields.Add(mapping.SourceField);
-                    }
-                }
-            }
-
+            // If no trigger fields are configured, always process this mapping set
             if (triggerFields.Count == 0)
             {
-                _tracer.Info("No trigger fields configured, will process all field changes");
-                _tracer.EndOperation("HasTriggerFieldChanged");
+                _tracer.Debug($"No trigger fields configured for {relatedEntity.EntityName}; processing by default.");
                 return true;
             }
 
-            _tracer.Info($"Checking {triggerFields.Count} trigger fields");
-
             foreach (var field in triggerFields)
             {
-                if (target.Contains(field))
+                if (!target.Contains(field))
                 {
-                    // Check if value actually changed
-                    if (preImage != null && preImage.Contains(field))
-                    {
-                        var oldValue = preImage[field];
-                        var newValue = target[field];
+                    continue; // field not part of this update payload
+                }
 
-                        if (!AreValuesEqual(oldValue, newValue))
-                        {
-                            _tracer.Info($"Trigger field '{field}' changed from '{oldValue}' to '{newValue}'");
-                            _tracer.EndOperation("HasTriggerFieldChanged");
-                            return true;
-                        }
-                    }
-                    else
+                // If a pre-image exists and contains the field, compare old vs new values
+                if (preImage != null && preImage.Contains(field))
+                {
+                    var oldValue = preImage[field];
+                    var newValue = target[field];
+
+                    if (!AreValuesEqual(oldValue, newValue))
                     {
-                        _tracer.Info($"Trigger field '{field}' is present in target (new value)");
-                        _tracer.EndOperation("HasTriggerFieldChanged");
+                        _tracer.Info($"Trigger field '{field}' changed for {relatedEntity.EntityName}");
                         return true;
                     }
                 }
+                else
+                {
+                    // Field present in target without pre-image means it changed/was set
+                    _tracer.Info($"Trigger field '{field}' provided on update for {relatedEntity.EntityName}");
+                    return true;
+                }
             }
 
-            _tracer.Info("No trigger fields changed");
-            _tracer.EndOperation("HasTriggerFieldChanged");
+            _tracer.Debug($"No trigger fields changed for {relatedEntity.EntityName}; skipping this mapping set.");
             return false;
         }
 
@@ -305,9 +296,18 @@ namespace CascadeFields.Plugin.Services
 
             try
             {
+                var anyTriggered = false;
+
                 // Process each related entity configuration
                 foreach (var relatedEntityConfig in config.RelatedEntities)
                 {
+                    if (!HasTriggerFieldChanged(relatedEntityConfig, target, preImage))
+                    {
+                        continue; // skip mapping sets whose trigger fields did not change
+                    }
+
+                    anyTriggered = true;
+
                     // Get values to cascade specific to this related entity
                     var valuesToCascade = GetValuesToCascade(target, preImage, relatedEntityConfig);
 
@@ -319,6 +319,11 @@ namespace CascadeFields.Plugin.Services
 
                     _tracer.Info($"Cascading {valuesToCascade.Count} field values to {relatedEntityConfig.EntityName}");
                     CascadeToRelatedEntity(target.Id, valuesToCascade, relatedEntityConfig, config);
+                }
+
+                if (!anyTriggered)
+                {
+                    _tracer.Info("No trigger fields changed for any related entity; skipping cascade.");
                 }
 
                 _tracer.EndOperation("CascadeFieldValues");
@@ -654,6 +659,14 @@ namespace CascadeFields.Plugin.Services
 
                     // Parse operator
                     ConditionOperator conditionOperator = ParseOperator(operatorStr);
+                    var requiresValue = OperatorRequiresValue(conditionOperator);
+
+                    if (!requiresValue)
+                    {
+                        query.Criteria.AddCondition(field, conditionOperator);
+                        _tracer.Debug($"Added filter: {field} {operatorStr} (no value)");
+                        continue;
+                    }
 
                     // Parse value based on type
                     object parsedValue = ParseValue(value);
@@ -666,6 +679,18 @@ namespace CascadeFields.Plugin.Services
             {
                 _tracer.Error("Error parsing filter criteria", ex);
                 throw new InvalidPluginExecutionException($"Invalid filter criteria format: {ex.Message}", ex);
+            }
+        }
+
+        private static bool OperatorRequiresValue(ConditionOperator op)
+        {
+            switch (op)
+            {
+                case ConditionOperator.Null:
+                case ConditionOperator.NotNull:
+                    return false;
+                default:
+                    return true;
             }
         }
 

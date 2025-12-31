@@ -17,7 +17,10 @@ namespace CascadeFields.Configurator.ViewModels
         private readonly IMetadataService _metadataService;
         private string _tabName = string.Empty;
         private RelationshipItem? _selectedRelationship;
+        private bool _useRelationship = true;
+        private string _lookupFieldName = string.Empty;
         private bool _isLoading;
+        private bool _isPublished;
 
         /// <summary>
         /// Parent entity logical name
@@ -48,9 +51,37 @@ namespace CascadeFields.Configurator.ViewModels
             {
                 if (SetProperty(ref _selectedRelationship, value))
                 {
+                    if (_useRelationship && string.IsNullOrWhiteSpace(_lookupFieldName))
+                    {
+                        _lookupFieldName = _selectedRelationship?.ReferencingAttribute ?? string.Empty;
+                        OnPropertyChanged(nameof(LookupFieldName));
+                    }
                     UpdateTabName();
                 }
             }
+        }
+
+        public bool UseRelationship
+        {
+            get => _useRelationship;
+            set
+            {
+                if (SetProperty(ref _useRelationship, value))
+                {
+                    if (!_useRelationship && string.IsNullOrWhiteSpace(_lookupFieldName))
+                    {
+                        _lookupFieldName = _selectedRelationship?.ReferencingAttribute ?? string.Empty;
+                        OnPropertyChanged(nameof(LookupFieldName));
+                    }
+                    UpdateTabName();
+                }
+            }
+        }
+
+        public string LookupFieldName
+        {
+            get => _lookupFieldName;
+            set => SetProperty(ref _lookupFieldName, value ?? string.Empty);
         }
 
         /// <summary>
@@ -110,6 +141,16 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
+        /// Indicates this tab was loaded from a previously published configuration.
+        /// Used to prompt before removal so the publish pipeline can delete it in Dataverse.
+        /// </summary>
+        public bool IsPublished
+        {
+            get => _isPublished;
+            set => SetProperty(ref _isPublished, value);
+        }
+
+        /// <summary>
         /// Loads parent/child attribute metadata for drop-downs used by mapping and filter grids.
         /// </summary>
         public async Task InitializeAsync()
@@ -154,7 +195,7 @@ namespace CascadeFields.Configurator.ViewModels
         public RelatedEntityConfigModel ToRelatedEntityConfig()
         {
             var lookupFieldName = SelectedRelationship?.ReferencingAttribute;
-            var useRelationship = SelectedRelationship is not null;
+            var useRelationship = UseRelationship && SelectedRelationship is not null;
 
             // Prefer explicit lookup field over relationship for reliability
             // Child relink step requires lookupFieldName to be set
@@ -170,9 +211,9 @@ namespace CascadeFields.Configurator.ViewModels
             return new RelatedEntityConfigModel
             {
                 EntityName = ChildEntityLogicalName,
-                RelationshipName = SelectedRelationship?.SchemaName,
+                RelationshipName = useRelationship ? SelectedRelationship?.SchemaName : null,
                 UseRelationship = useRelationship,
-                LookupFieldName = lookupFieldName,
+                LookupFieldName = string.IsNullOrWhiteSpace(LookupFieldName) ? lookupFieldName : LookupFieldName,
                 FilterCriteria = BuildFilterString(),
                 FieldMappings = FieldMappings
                     .Where(m => m.IsValid)
@@ -205,8 +246,12 @@ namespace CascadeFields.Configurator.ViewModels
         {
             var entityDisplay = SelectedRelationship?.ChildEntityDisplayName ?? ChildEntityLogicalName;
 
-            var lookupDisplay = SelectedRelationship?.LookupFieldDisplayName;
-            var schemaDisplay = SelectedRelationship?.SchemaName;
+            var lookupDisplay = UseRelationship
+                ? SelectedRelationship?.LookupFieldDisplayName
+                : LookupFieldName;
+            var schemaDisplay = UseRelationship
+                ? SelectedRelationship?.SchemaName
+                : (string.IsNullOrWhiteSpace(LookupFieldName) ? null : "(lookup field)");
 
             // Build three-line title: Entity (bold/larger), Lookup, Schema
             var title = entityDisplay;
@@ -279,6 +324,10 @@ namespace CascadeFields.Configurator.ViewModels
             {
                 FilterCriteria.Add(new FilterCriterionViewModel());
             }
+
+            UseRelationship = model.UseRelationship;
+            LookupFieldName = model.LookupFieldName ?? string.Empty;
+            UpdateTabName();
         }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Specialized;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -22,6 +23,10 @@ namespace CascadeFields.Configurator.Controls
     {
         private ConfigurationViewModel? _viewModel;
         private string? _currentConnectionId;
+        private Panel? _loadingOverlay;
+        private Panel? _loadingDialog;
+        private ProgressBar? _loadingProgress;
+        private System.Windows.Forms.Label? _loadingLabel;
 
         public CascadeFieldsConfiguratorControl()
         {
@@ -56,6 +61,7 @@ namespace CascadeFields.Configurator.Controls
             // Initialize ViewModel with connection and restore session
             var connectionId = ConnectionDetail?.ConnectionId.ToString() ?? "default";
             var initTask = _viewModel.InitializeAsync(connectionId);
+                EnsureLoadingOverlay();
 
             // Wire up UI events
             WireUpBindings();
@@ -135,6 +141,71 @@ namespace CascadeFields.Configurator.Controls
             {
                 Initialize();
             }
+        }
+
+        private void EnsureLoadingOverlay()
+        {
+            if (_loadingOverlay != null)
+                return;
+
+            _loadingOverlay = new Panel
+            {
+                BackColor = Color.Transparent,
+                Visible = false,
+                Size = new Size(1, 1),
+                Anchor = AnchorStyles.None
+            };
+
+            _loadingDialog = new Panel
+            {
+                Size = new Size(360, 140),
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                Padding = new Padding(12),
+                Anchor = AnchorStyles.None
+            };
+
+            _loadingLabel = new System.Windows.Forms.Label
+            {
+                AutoSize = false,
+                Dock = DockStyle.Top,
+                Height = 64,
+                TextAlign = ContentAlignment.MiddleCenter,
+                ForeColor = Color.Black,
+                Font = new Font(Font.FontFamily, 10, FontStyle.Bold)
+            };
+
+            _loadingProgress = new ProgressBar
+            {
+                Dock = DockStyle.Bottom,
+                Height = 18,
+                Style = ProgressBarStyle.Marquee,
+                MarqueeAnimationSpeed = 30
+            };
+
+            _loadingDialog.Controls.Add(_loadingProgress);
+            _loadingDialog.Controls.Add(_loadingLabel);
+            _loadingOverlay.Controls.Add(_loadingDialog);
+            Controls.Add(_loadingOverlay);
+            _loadingOverlay.BringToFront();
+            SizeChanged += (_, __) => CenterLoadingDialog();
+            CenterLoadingDialog();
+        }
+
+        private void CenterLoadingDialog()
+        {
+            if (_loadingOverlay == null || _loadingDialog == null)
+                return;
+
+            var target = Parent ?? this;
+            var size = target.ClientSize;
+            var x = Math.Max(0, (size.Width - _loadingDialog.Width) / 2);
+            var y = Math.Max(0, (size.Height - _loadingDialog.Height) / 2);
+
+            _loadingOverlay.Size = _loadingDialog.Size;
+            _loadingOverlay.Location = new Point(x, y);
+            _loadingDialog.Location = Point.Empty;
+            _loadingOverlay.Invalidate();
         }
 
         /// <summary>
@@ -253,7 +324,13 @@ namespace CascadeFields.Configurator.Controls
 
             // Parent entity combo box binding
             RefreshParentEntities();
-            _viewModel.ParentEntities.CollectionChanged += (s, e) => RefreshParentEntities();
+            _viewModel.ParentEntities.CollectionChanged += (s, e) =>
+            {
+                if (_viewModel.IsBulkLoadingParentEntities)
+                    return;
+
+                RefreshParentEntities();
+            };
             cmbParentEntity.SelectedIndexChanged += (s, e) =>
             {
                 _viewModel.SelectedParentEntity = cmbParentEntity.SelectedItem as EntityItem;
@@ -316,6 +393,11 @@ namespace CascadeFields.Configurator.Controls
                 {
                     lblStatus.Text = _viewModel.StatusMessage;
                     AppendLog(_viewModel.StatusMessage);
+                    if (_viewModel.IsLoading)
+                    {
+                        ShowLoadingOverlay(_viewModel.StatusMessage);
+                        UpdateLoadingProgress();
+                    }
                 }
                 if (e.PropertyName == nameof(ConfigurationViewModel.ConfigurationJson))
                     txtJsonPreview.Text = _viewModel.ConfigurationJson;
@@ -323,6 +405,29 @@ namespace CascadeFields.Configurator.Controls
                     chkEnableTracing.Checked = _viewModel.EnableTracing;
                 if (e.PropertyName == nameof(ConfigurationViewModel.IsActive))
                     chkIsActive.Checked = _viewModel.IsActive;
+                if (e.PropertyName == nameof(ConfigurationViewModel.IsBulkLoadingParentEntities) && !_viewModel.IsBulkLoadingParentEntities)
+                {
+                    RefreshParentEntities();
+                }
+
+                if (e.PropertyName == nameof(ConfigurationViewModel.IsLoading))
+                {
+                    if (_viewModel.IsLoading)
+                    {
+                        ShowLoadingOverlay(_viewModel.StatusMessage);
+                        UpdateLoadingProgress();
+                    }
+                    else
+                    {
+                        HideLoadingOverlay();
+                    }
+                }
+
+                if (e.PropertyName == nameof(ConfigurationViewModel.LoadingProgressCurrent)
+                    || e.PropertyName == nameof(ConfigurationViewModel.LoadingProgressTotal))
+                {
+                    UpdateLoadingProgress();
+                }
 
                 // Keep solution/parent entity combos in sync when selection changes in ViewModel
                 if (e.PropertyName == nameof(ConfigurationViewModel.SelectedSolution) ||
@@ -407,6 +512,92 @@ namespace CascadeFields.Configurator.Controls
             else
             {
                 Write();
+            }
+        }
+
+        private void ShowLoadingOverlay(string message)
+        {
+            if (_loadingOverlay == null || _loadingLabel == null)
+                return;
+
+            void Show()
+            {
+                _loadingLabel.Text = string.IsNullOrWhiteSpace(message) ? "Loading..." : message;
+                _loadingOverlay.Visible = true;
+                CenterLoadingDialog();
+                _loadingOverlay.BringToFront();
+                _loadingOverlay.Update();
+                _loadingDialog?.Update();
+                _loadingLabel?.Update();
+                _loadingProgress?.Update();
+                UseWaitCursor = true;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)(Show));
+            }
+            else
+            {
+                Show();
+            }
+        }
+
+        private void HideLoadingOverlay()
+        {
+            if (_loadingOverlay == null)
+                return;
+
+            void Hide()
+            {
+                _loadingOverlay.Visible = false;
+                UseWaitCursor = false;
+            }
+
+            if (InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)(Hide));
+            }
+            else
+            {
+                Hide();
+            }
+        }
+
+        private void UpdateLoadingProgress()
+        {
+            if (_viewModel == null || _loadingProgress == null)
+                return;
+
+            void Update()
+            {
+                if (_viewModel.LoadingProgressTotal > 0)
+                {
+                    _loadingProgress.Style = ProgressBarStyle.Continuous;
+                    _loadingProgress.Minimum = 0;
+                    _loadingProgress.Maximum = Math.Max(1, _viewModel.LoadingProgressTotal);
+                    var value = Math.Max(_loadingProgress.Minimum, Math.Min(_viewModel.LoadingProgressCurrent, _loadingProgress.Maximum));
+                    _loadingProgress.Value = value;
+                }
+                else
+                {
+                    _loadingProgress.Style = ProgressBarStyle.Marquee;
+                    _loadingProgress.MarqueeAnimationSpeed = 30;
+                }
+
+                if (_loadingLabel != null)
+                {
+                    _loadingLabel.Text = _viewModel.StatusMessage;
+                }
+            }
+
+            if (_loadingProgress.InvokeRequired)
+            {
+                _loadingProgress.BeginInvoke((MethodInvoker)(() => Update()));
+            }
+            else
+            {
+                Update();
             }
         }
 
@@ -512,7 +703,67 @@ namespace CascadeFields.Configurator.Controls
             if (_viewModel?.SelectedTab != null)
                 _viewModel.RemoveRelationshipCommand.Execute(_viewModel.SelectedTab);
         }
-        private void BtnPublish_Click(object? sender, EventArgs e) => _viewModel?.PublishCommand.Execute(null);
+        private void BtnPublish_Click(object? sender, EventArgs e)
+        {
+            if (_viewModel == null)
+                return;
+
+            if (!_viewModel.CanPublish)
+            {
+                var reason = GetPublishBlockerReason(_viewModel);
+                MessageBox.Show(reason, "Publish", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                AppendLog(reason);
+                return;
+            }
+
+            _viewModel.PublishCommand.Execute(null);
+        }
+
+        private static string GetPublishBlockerReason(ConfigurationViewModel vm)
+        {
+            if (!vm.IsConnected)
+            {
+                return "Connect to a Dataverse environment before publishing.";
+            }
+
+            if (vm.IsLoading)
+            {
+                return "Please wait for the current operation to complete before publishing.";
+            }
+
+            if (!vm.IsConfigurationValid)
+            {
+                if (vm.SelectedSolution == null)
+                {
+                    return "Select a solution before publishing.";
+                }
+
+                if (vm.SelectedParentEntity == null)
+                {
+                    return "Select a parent entity before publishing.";
+                }
+
+                if (vm.RelationshipTabs.Count == 0)
+                {
+                    return "Add at least one relationship before publishing.";
+                }
+
+                var invalidTabs = vm.RelationshipTabs
+                    .Where(t => t.SelectedRelationship == null || !t.FieldMappings.Any(m => m.IsValid))
+                    .Select(t => t.ChildEntityLogicalName)
+                    .Distinct()
+                    .ToList();
+
+                if (invalidTabs.Count > 0)
+                {
+                    return "Each relationship must have a selected relationship and at least one valid mapping. Fix: " + string.Join(", ", invalidTabs);
+                }
+
+                return "Configuration is not valid for publishing.";
+            }
+
+            return "Publishing is currently blocked.";
+        }
         private void BtnExportJson_Click(object? sender, EventArgs e) => ExportJson();
         private async void BtnImportJson_Click(object? sender, EventArgs e) => await ImportJsonAsync();
         private async void BtnRetrieveConfigured_Click(object? sender, EventArgs e) => await RetrieveConfiguredEntityAsync();
@@ -537,6 +788,14 @@ namespace CascadeFields.Configurator.Controls
                 AppendLog($"Creating tab for {tabVm.ChildEntityLogicalName}...");
                 var tabPage = new TabPage(tabVm.TabName ?? "Relationship");
                 tabPage.Tag = tabVm;
+
+                tabVm.PropertyChanged += (s, e) =>
+                {
+                    if (e.PropertyName == nameof(RelationshipTabViewModel.TabName))
+                    {
+                        tabPage.Text = tabVm.TabName;
+                    }
+                };
 
                 var splitContainer = new SplitContainer
                 {

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using CascadeFields.Configurator.Models.UI;
 using Microsoft.Xrm.Sdk.Metadata;
+using CascadeFields.Configurator.Models;
 
 namespace CascadeFields.Configurator.Services
 {
@@ -20,7 +21,12 @@ namespace CascadeFields.Configurator.Services
         /// Gets all entities in a specific solution
         /// </summary>
         /// <param name="solutionUniqueName">Unique name of the solution</param>
-        Task<List<EntityMetadata>> GetSolutionEntitiesAsync(string solutionUniqueName);
+        Task<List<EntityMetadata>> GetSolutionEntitiesAsync(string solutionUniqueName, IProgress<MetadataLoadProgress>? progress = null);
+
+        /// <summary>
+        /// Returns the number of entity components in the given solution.
+        /// </summary>
+        Task<int> GetSolutionEntityCountAsync(string solutionUniqueName);
 
         /// <summary>
         /// Gets all attributes for a specific entity

@@ -90,13 +90,6 @@ namespace CascadeFields.Plugin
                         tracer.Warning($"Parent update detected on unexpected stage {context.Stage}. Recommended: 40 (Post-operation)");
                     }
 
-                    // Check if any trigger fields changed
-                    if (!cascadeService.HasTriggerFieldChanged(target, preImage, config))
-                    {
-                        tracer.Info("No trigger fields changed, skipping cascade");
-                        return;
-                    }
-
                     // Perform cascade operation to children
                     tracer.Info("Beginning cascade operation to related children");
                     cascadeService.CascadeFieldValues(target, preImage, config);

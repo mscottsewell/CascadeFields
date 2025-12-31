@@ -179,6 +179,8 @@ namespace CascadeFields.Configurator.Controls
                 Margin = new Padding(0)
             };
 
+            _grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.False;
+
             // Source Field column
             _grid.Columns.Add(new DataGridViewComboBoxColumn
             {
@@ -207,7 +209,8 @@ namespace CascadeFields.Configurator.Controls
                 Name = "IsTriggerField",
                 HeaderText = "Trigger Field",
                 DataPropertyName = "IsTriggerField",
-                Width = 80
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.DisplayedCells,
+                MinimumWidth = 70
             });
 
             _grid.CellValueChanged += Grid_CellValueChanged;

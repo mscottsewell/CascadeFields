@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -19,6 +20,8 @@ namespace CascadeFields.Configurator.Services
     public class MetadataService : IMetadataService
     {
         private readonly IOrganizationService _service;
+        private readonly ConcurrentDictionary<string, List<EntityMetadata>> _solutionEntitiesCache = new(StringComparer.OrdinalIgnoreCase);
+        private readonly ConcurrentDictionary<string, List<RelationshipItem>> _childRelationshipCache = new(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Initializes a metadata service bound to a specific organization service.
@@ -72,11 +75,17 @@ namespace CascadeFields.Configurator.Services
         /// <summary>
         /// Retrieves entity metadata for entities that belong to a specific solution, using MetadataChanges for performance.
         /// </summary>
-        public Task<List<EntityMetadata>> GetSolutionEntitiesAsync(string solutionUniqueName)
+        public Task<List<EntityMetadata>> GetSolutionEntitiesAsync(string solutionUniqueName, IProgress<MetadataLoadProgress>? progress = null)
         {
             if (string.IsNullOrWhiteSpace(solutionUniqueName))
             {
                 throw new ArgumentNullException(nameof(solutionUniqueName));
+            }
+
+            // Cache solution entity sets to avoid repeated metadata round-trips
+            if (_solutionEntitiesCache.TryGetValue(solutionUniqueName, out var cached))
+            {
+                return Task.FromResult(cached);
             }
 
             return Task.Run(() =>
@@ -122,8 +131,11 @@ namespace CascadeFields.Configurator.Services
 
                 if (entityIds.Count == 0)
                 {
+                    progress?.Report(new MetadataLoadProgress(0, 0, "No entities found in solution."));
                     return new List<EntityMetadata>();
                 }
+
+                progress?.Report(new MetadataLoadProgress(0, entityIds.Count, "Retrieving entity metadata..."));
 
                 // OPTIMIZED: Use EntityFilters and MetadataConditions to only retrieve entities in this solution
                 // This is MUCH faster than retrieving all entities and filtering in memory
@@ -189,8 +201,65 @@ namespace CascadeFields.Configurator.Services
                 
                 // Entities are already filtered by the query - no need for additional filtering
                 var entities = metadataResponse.EntityMetadata.ToList();
+                progress?.Report(new MetadataLoadProgress(entityIds.Count, entityIds.Count, "Entity metadata retrieved."));
+                _solutionEntitiesCache[solutionUniqueName] = entities;
 
                 return entities;
+            });
+        }
+
+        public Task<int> GetSolutionEntityCountAsync(string solutionUniqueName)
+        {
+            if (string.IsNullOrWhiteSpace(solutionUniqueName))
+            {
+                throw new ArgumentNullException(nameof(solutionUniqueName));
+            }
+
+            if (_solutionEntitiesCache.TryGetValue(solutionUniqueName, out var cached))
+            {
+                return Task.FromResult(cached.Count);
+            }
+
+            return Task.Run(() =>
+            {
+                var solutionQuery = new QueryExpression("solution")
+                {
+                    ColumnSet = new ColumnSet("solutionid"),
+                    Criteria =
+                    {
+                        Conditions =
+                        {
+                            new ConditionExpression("uniquename", ConditionOperator.Equal, solutionUniqueName)
+                        }
+                    }
+                };
+
+                var solution = _service.RetrieveMultiple(solutionQuery).Entities.FirstOrDefault();
+                var solutionId = solution?.Id ?? Guid.Empty;
+                if (solutionId == Guid.Empty)
+                {
+                    return 0;
+                }
+
+                var componentQuery = new QueryExpression("solutioncomponent")
+                {
+                    ColumnSet = new ColumnSet("objectid"),
+                    Criteria =
+                    {
+                        Conditions =
+                        {
+                            new ConditionExpression("solutionid", ConditionOperator.Equal, solutionId),
+                            new ConditionExpression("componenttype", ConditionOperator.Equal, 1)
+                        }
+                    }
+                };
+
+                var components = _service.RetrieveMultiple(componentQuery);
+                var entityIds = new HashSet<Guid>(components.Entities
+                    .Select(e => e.GetAttributeValue<Guid>("objectid"))
+                    .Where(id => id != Guid.Empty));
+
+                return entityIds.Count;
             });
         }
 
@@ -241,17 +310,25 @@ namespace CascadeFields.Configurator.Services
         {
             return Task.Run(async () =>
             {
+                var cacheKey = $"{solutionUniqueName ?? "Active"}|{parentEntityLogicalName}";
+                if (_childRelationshipCache.TryGetValue(cacheKey, out var cached))
+                {
+                    return cached;
+                }
+
                 var metadata = await GetEntityMetadataAsync(parentEntityLogicalName);
                 if (metadata == null)
                     return new List<RelationshipItem>();
 
-                // Get all entities for relationship resolution
+                // Get only entities from the chosen solution; if none, return empty
                 var solutionName = string.IsNullOrWhiteSpace(solutionUniqueName) ? "Active" : solutionUniqueName;
                 var allEntities = (await GetSolutionEntitiesAsync(solutionName ?? "Active")).ToList();
                 if (allEntities.Count == 0)
                     return new List<RelationshipItem>();
 
-                return GetChildRelationships(metadata, allEntities).ToList();
+                var relationships = GetChildRelationships(metadata, allEntities).ToList();
+                _childRelationshipCache[cacheKey] = relationships;
+                return relationships;
             });
         }
 
@@ -321,53 +398,50 @@ namespace CascadeFields.Configurator.Services
             // Only include relationships where the referencing entity exists in the current solution set.
             // The relationship component itself may not be in the solution, but the entity must be.
             // DO NOT group - we want all relationships shown, even if multiple exist from the same child entity
-            var relationships = parent.OneToManyRelationships
-                .Where(r => string.Equals(r.ReferencedEntity, parent.LogicalName, StringComparison.OrdinalIgnoreCase))
-                .Where(r => !string.IsNullOrWhiteSpace(r.ReferencingEntity) && !string.IsNullOrWhiteSpace(r.ReferencingAttribute))
-                .Select(r => new
-                {
-                    Relationship = r,
-                    Child = allEntities.FirstOrDefault(e => string.Equals(e.LogicalName, r.ReferencingEntity, StringComparison.OrdinalIgnoreCase))
-                })
-                .Select(x => new
-                {
-                    x.Relationship,
-                    x.Child
-                })
-                .Where(x => x.Child != null)
-                .Select(x =>
-                {
-                    var childDisplayName = x.Child!.DisplayName?.UserLocalizedLabel?.Label
-                                         ?? x.Relationship.ReferencingEntity
-                                         ?? string.Empty;
-                    
-                    // Get lookup field display name
-                    var lookupFieldDisplayName = string.Empty;
-                    if (x.Child?.Attributes != null)
-                    {
-                        var lookupAttr = x.Child.Attributes.FirstOrDefault(a => 
-                            string.Equals(a.LogicalName, x.Relationship.ReferencingAttribute, StringComparison.OrdinalIgnoreCase));
-                        if (lookupAttr != null)
+                var relationships = parent.OneToManyRelationships
+                        .Where(r => string.Equals(r.ReferencedEntity, parent.LogicalName, StringComparison.OrdinalIgnoreCase))
+                        .Where(r => !string.IsNullOrWhiteSpace(r.ReferencingEntity) && !string.IsNullOrWhiteSpace(r.ReferencingAttribute))
+                        .Select(r => new
                         {
-                            lookupFieldDisplayName = lookupAttr.DisplayName?.UserLocalizedLabel?.Label 
-                                                  ?? x.Relationship.ReferencingAttribute 
-                                                  ?? string.Empty;
-                        }
-                    }
-                    
-                    return new RelationshipItem
-                    {
-                        SchemaName = x.Relationship.SchemaName,
-                        ReferencingEntity = x.Relationship.ReferencingEntity ?? string.Empty,
-                        ReferencingAttribute = x.Relationship.ReferencingAttribute ?? string.Empty,
-                        DisplayName = childDisplayName,
-                        ChildEntityDisplayName = childDisplayName,
-                        LookupFieldDisplayName = lookupFieldDisplayName
-                    };
-                })
-                .OrderBy(r => r.DisplayName)
-                .ThenBy(r => r.ReferencingAttribute)
-                .ToList();
+                            Relationship = r,
+                            ChildMeta = allEntities.FirstOrDefault(e => string.Equals(e.LogicalName, r.ReferencingEntity, StringComparison.OrdinalIgnoreCase))
+                        })
+                        .Where(x => x.ChildMeta != null)
+                        .Select(x =>
+                        {
+                            var r = x.Relationship;
+                            var childMeta = x.ChildMeta!;
+
+                            var childDisplayName = childMeta.DisplayName?.UserLocalizedLabel?.Label
+                                                 ?? r.ReferencingEntity
+                                                 ?? string.Empty;
+
+                            var lookupFieldDisplayName = r.ReferencingAttribute ?? string.Empty;
+                            if (childMeta.Attributes != null)
+                            {
+                                var lookupAttr = childMeta.Attributes.FirstOrDefault(a =>
+                                    string.Equals(a.LogicalName, r.ReferencingAttribute, StringComparison.OrdinalIgnoreCase));
+                                if (lookupAttr != null)
+                                {
+                                    lookupFieldDisplayName = lookupAttr.DisplayName?.UserLocalizedLabel?.Label
+                                                          ?? r.ReferencingAttribute
+                                                          ?? string.Empty;
+                                }
+                            }
+
+                            return new RelationshipItem
+                            {
+                                SchemaName = r.SchemaName,
+                                ReferencingEntity = r.ReferencingEntity ?? string.Empty,
+                                ReferencingAttribute = r.ReferencingAttribute ?? string.Empty,
+                                DisplayName = childDisplayName,
+                                ChildEntityDisplayName = childDisplayName,
+                                LookupFieldDisplayName = lookupFieldDisplayName
+                            };
+                        })
+                        .OrderBy(r => r.DisplayName)
+                        .ThenBy(r => r.ReferencingAttribute)
+                        .ToList();
 
             return relationships;
         }

@@ -11,6 +11,7 @@ using CascadeFields.Configurator.Models.Domain;
 using CascadeFields.Configurator.Models.Session;
 using CascadeFields.Configurator.Models.UI;
 using CascadeFields.Configurator.Services;
+using CascadeFields.Configurator.Models;
 using Newtonsoft.Json;
 using Microsoft.Xrm.Sdk.Metadata;
 
@@ -39,12 +40,16 @@ namespace CascadeFields.Configurator.ViewModels
         private string _connectionId = string.Empty;
         private bool _isLoading;
         private string _statusMessage = "Ready. Connect to Dataverse and click 'Retrieve Configured Entity'.";
+        private int _loadingProgressCurrent;
+        private int _loadingProgressTotal;
+        private bool _isBulkLoadingParentEntities;
         private SolutionItem? _selectedSolution;
         private EntityItem? _selectedParentEntity;
         private RelationshipTabViewModel? _selectedTab;
         private bool _enableTracing = true;
         private bool _isActive = true;
         private bool _hasChanges;
+        private CascadeConfigurationModel? _lastPublishedConfiguration;
 
         #region Collections
 
@@ -147,6 +152,27 @@ namespace CascadeFields.Configurator.ViewModels
             set => SetProperty(ref _statusMessage, value);
         }
 
+        public int LoadingProgressCurrent
+        {
+            get => _loadingProgressCurrent;
+            private set => SetProperty(ref _loadingProgressCurrent, value);
+        }
+
+        public int LoadingProgressTotal
+        {
+            get => _loadingProgressTotal;
+            private set => SetProperty(ref _loadingProgressTotal, value);
+        }
+
+        /// <summary>
+        /// Indicates the parent entity list is being bulk loaded; UI should defer rebinding until complete.
+        /// </summary>
+        public bool IsBulkLoadingParentEntities
+        {
+            get => _isBulkLoadingParentEntities;
+            private set => SetProperty(ref _isBulkLoadingParentEntities, value);
+        }
+
         /// <summary>
         /// Whether tracing is enabled in the configuration
         /// </summary>
@@ -198,10 +224,12 @@ namespace CascadeFields.Configurator.ViewModels
         /// </summary>
         public bool IsConfigurationValid => 
             SelectedParentEntity != null &&
-            RelationshipTabs.Count > 0 &&
-            RelationshipTabs.All(t => 
-                t.FieldMappings.Any(m => m.IsValid) &&
-                t.SelectedRelationship != null);
+            (
+                RelationshipTabs.Count == 0 ||
+                RelationshipTabs.All(t => 
+                    t.FieldMappings.Any(m => m.IsValid) &&
+                    t.SelectedRelationship != null)
+            );
 
         /// <summary>
         /// Whether configuration can be published
@@ -346,7 +374,7 @@ namespace CascadeFields.Configurator.ViewModels
                 // Restore configuration from JSON
                 if (!string.IsNullOrWhiteSpace(session.ConfigurationJson))
                 {
-                    await ApplyConfigurationAsync(session.ConfigurationJson);
+                    await ApplyConfigurationAsync(session.ConfigurationJson, markAsPublished: true);
                 }
 
                 StatusMessage = "Session restored.";
@@ -389,6 +417,7 @@ namespace CascadeFields.Configurator.ViewModels
             SelectedParentEntity = null;
             SelectedSolution = null;
             ConfigurationJson = string.Empty;
+            _lastPublishedConfiguration = null;
             StatusMessage = "Session cleared.";
             _ = _settingsRepository.ClearSessionAsync(ConnectionId);
         }
@@ -406,8 +435,9 @@ namespace CascadeFields.Configurator.ViewModels
             if (IsLoading)
                 return;
 
-            IsLoading = true;
             StatusMessage = "Loading solutions...";
+            IsLoading = true;
+            string? finalStatus = null;
             Log($"LoadSolutionsAsync(autoSelectDefault: {autoSelectDefault})");
 
             try
@@ -426,29 +456,33 @@ namespace CascadeFields.Configurator.ViewModels
                     if (defaultSolution != null)
                     {
                         SelectedSolution = defaultSolution;
-                        StatusMessage = $"Loaded {solutions.Count} solutions. Selected 'Default Solution'.";
+                        finalStatus = $"Loaded {solutions.Count} solutions. Selected 'Default Solution'.";
                         Log("Default solution auto-selected");
                     }
                     else
                     {
-                        StatusMessage = $"Loaded {solutions.Count} solutions.";
+                        finalStatus = $"Loaded {solutions.Count} solutions.";
                     }
                 }
                 else
                 {
-                    StatusMessage = $"Loaded {solutions.Count} solutions.";
+                    finalStatus = $"Loaded {solutions.Count} solutions.";
                 }
                 Log($"Solutions loaded: {solutions.Count}");
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error loading solutions: {ex.Message}";
+                finalStatus = $"Error loading solutions: {ex.Message}";
                 Debug.WriteLine($"Error in LoadSolutionsAsync: {ex}");
                 Log($"Error loading solutions: {ex}");
             }
             finally
             {
                 IsLoading = false;
+                if (!string.IsNullOrWhiteSpace(finalStatus))
+                {
+                    StatusMessage = finalStatus!;
+                }
             }
         }
 
@@ -464,13 +498,38 @@ namespace CascadeFields.Configurator.ViewModels
                 return;
             }
 
-            IsLoading = true;
             StatusMessage = "Loading entities...";
+            IsLoading = true;
+            LoadingProgressCurrent = 0;
+            LoadingProgressTotal = 0;
+            IsBulkLoadingParentEntities = true;
+            string? finalStatus = null;
             Log($"OnSolutionChangedAsync -> {SelectedSolution.UniqueName}");
 
             try
             {
-                var entities = await _metadataService.GetSolutionEntitiesAsync(SelectedSolution.UniqueName);
+                var entityCount = await _metadataService.GetSolutionEntityCountAsync(SelectedSolution!.UniqueName);
+                LoadingProgressTotal = entityCount;
+
+                var progress = new Progress<MetadataLoadProgress>(p =>
+                {
+                    var message = string.IsNullOrWhiteSpace(p.Message)
+                        ? "Loading entities..."
+                        : p.Message!;
+
+                    if (p.Total > 0)
+                    {
+                        StatusMessage = $"{message} ({p.Completed}/{p.Total})";
+                        LoadingProgressTotal = p.Total;
+                        LoadingProgressCurrent = Math.Max(0, Math.Min(p.Completed, p.Total));
+                    }
+                    else
+                    {
+                        StatusMessage = message;
+                    }
+                });
+
+                var entities = await _metadataService.GetSolutionEntitiesAsync(SelectedSolution!.UniqueName, progress);
                 ParentEntities.Clear();
                 foreach (var entity in entities.OrderBy(
                              e => e.DisplayName?.UserLocalizedLabel?.Label ?? e.LogicalName,
@@ -485,19 +544,26 @@ namespace CascadeFields.Configurator.ViewModels
                     ParentEntities.Add(item);
                 }
 
-                StatusMessage = $"Loaded {entities.Count} entities.";
+                finalStatus = $"Loaded {entities.Count} entities.";
                 Log($"Entities loaded for solution {SelectedSolution.UniqueName}: {entities.Count}");
                 ScheduleSave();
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error loading entities: {ex.Message}";
+                finalStatus = $"Error loading entities: {ex.Message}";
                 Debug.WriteLine($"Error in OnSolutionChangedAsync: {ex}");
                 Log($"Error loading entities: {ex}");
             }
             finally
             {
+                LoadingProgressCurrent = 0;
+                LoadingProgressTotal = 0;
+                IsBulkLoadingParentEntities = false;
                 IsLoading = false;
+                if (!string.IsNullOrWhiteSpace(finalStatus))
+                {
+                    StatusMessage = finalStatus!;
+                }
             }
         }
 
@@ -508,6 +574,7 @@ namespace CascadeFields.Configurator.ViewModels
         {
             RelationshipTabs.Clear();
             ConfigurationJson = string.Empty;
+            _lastPublishedConfiguration = null;
 
             var parentEntity = SelectedParentEntity;
             if (parentEntity == null)
@@ -527,7 +594,7 @@ namespace CascadeFields.Configurator.ViewModels
                 {
                     var configText = existingConfig!;
                     Log($"Existing configuration found for {parentLogicalName}; length={configText.Length}");
-                    await ApplyConfigurationAsync(configText);
+                    await ApplyConfigurationAsync(configText, markAsPublished: true);
                 }
                 else
                 {
@@ -550,7 +617,7 @@ namespace CascadeFields.Configurator.ViewModels
         /// <summary>
         /// Applies a configuration from JSON
         /// </summary>
-        public async Task ApplyConfigurationAsync(string? json)
+        public async Task ApplyConfigurationAsync(string? json, bool markAsPublished = false)
         {
             if (string.IsNullOrWhiteSpace(json))
             {
@@ -558,6 +625,10 @@ namespace CascadeFields.Configurator.ViewModels
                 Log("ApplyConfigurationAsync called with empty json");
                 return;
             }
+
+            StatusMessage = "Applying configuration...";
+            IsLoading = true;
+            string? finalStatus = null;
 
             try
             {
@@ -613,8 +684,9 @@ namespace CascadeFields.Configurator.ViewModels
                 // Clear existing tabs
                 RelationshipTabs.Clear();
 
-                // Load relationships once for this parent entity
-                var relationships = await _metadataService.GetChildRelationshipsAsync(config.ParentEntity);
+                StatusMessage = $"Loading relationships for {config.ParentEntity}...";
+                // Load relationships once for this parent entity, filtered to selected solution
+                var relationships = await _metadataService.GetChildRelationshipsAsync(config.ParentEntity, SelectedSolution?.UniqueName);
                 Debug.WriteLine($"Loaded {relationships.Count} relationships for {config.ParentEntity}");
                 Log($"Child relationships loaded for {config.ParentEntity}: {relationships.Count}");
 
@@ -658,6 +730,7 @@ namespace CascadeFields.Configurator.ViewModels
 
                     // Apply configuration to tab
                     tabVm.LoadFromModel(relatedEntity);
+                    tabVm.IsPublished = markAsPublished;
 
                     // CRITICAL: Check if this relationship tab already exists
                     var existingTab = RelationshipTabs.FirstOrDefault(t => 
@@ -682,14 +755,26 @@ namespace CascadeFields.Configurator.ViewModels
                 IsActive = config.IsActive;
 
                 UpdateJsonPreview();
-                StatusMessage = $"Loaded configuration with {config.RelatedEntities.Count} relationship(s).";
-                Log(StatusMessage);
+                if (markAsPublished)
+                {
+                    _lastPublishedConfiguration = CascadeConfigurationModel.FromJson(ConfigurationJson);
+                }
+                finalStatus = $"Loaded configuration with {config.RelatedEntities.Count} relationship(s).";
+                Log(finalStatus);
             }
             catch (Exception ex)
             {
-                StatusMessage = $"Error applying configuration: {ex.Message}";
+                finalStatus = $"Error applying configuration: {ex.Message}";
                 Debug.WriteLine($"Error in ApplyConfigurationAsync: {ex}");
                 Log($"Error applying configuration: {ex}");
+            }
+            finally
+            {
+                IsLoading = false;
+                if (!string.IsNullOrWhiteSpace(finalStatus))
+                {
+                    StatusMessage = finalStatus!;
+                }
             }
             
             // Force UI refresh
@@ -704,14 +789,14 @@ namespace CascadeFields.Configurator.ViewModels
             if (SelectedParentEntity == null)
                 return;
 
-            IsLoading = true;
             StatusMessage = "Loading available relationships...";
+            IsLoading = true;
 
             try
             {
-                // Load relationships for the parent entity
+                // Load relationships for the parent entity scoped to the selected solution
                 var allRelationships = await _metadataService
-                    .GetChildRelationshipsAsync(SelectedParentEntity.LogicalName);
+                    .GetChildRelationshipsAsync(SelectedParentEntity.LogicalName, SelectedSolution?.UniqueName);
 
                 if (allRelationships.Count == 0)
                 {
@@ -791,13 +876,32 @@ namespace CascadeFields.Configurator.ViewModels
         /// </summary>
         private void RemoveRelationship(object? parameter)
         {
-            if (SelectedTab != null)
+            if (SelectedTab == null)
+                return;
+
+            var tab = SelectedTab;
+
+            if (tab.IsPublished)
             {
-                RelationshipTabs.Remove(SelectedTab);
-                UpdateJsonPreview();
-                StatusMessage = "Relationship removed.";
-                ScheduleSave();
+                var confirm = MessageBox.Show(
+                    "This relationship was previously published. Removing it will delete it from Dataverse on the next Publish. Continue?",
+                    "Remove Published Relationship",
+                    MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning);
+
+                if (confirm != DialogResult.Yes)
+                {
+                    StatusMessage = "Remove relationship cancelled.";
+                    return;
+                }
+
+                StatusMessage = "Relationship marked for deletion. Publish to remove it from Dataverse.";
             }
+
+            RelationshipTabs.Remove(tab);
+            SelectedTab = RelationshipTabs.FirstOrDefault();
+            UpdateJsonPreview();
+            ScheduleSave();
         }
 
         /// <summary>
@@ -808,13 +912,50 @@ namespace CascadeFields.Configurator.ViewModels
             if (!IsConfigurationValid)
                 return;
 
-            IsLoading = true;
             StatusMessage = "Publishing configuration...";
+            IsLoading = true;
 
             try
             {
-                var progress = new Progress<string>(msg => StatusMessage = msg);
+                IProgress<string> progress = new Progress<string>(msg => StatusMessage = msg);
                 var config = BuildConfigurationModel();
+
+                if (config.RelatedEntities.Count == 0)
+                {
+                    var warnMessage = _lastPublishedConfiguration?.RelatedEntities.Any() == true
+                        ? "This will delete all published CascadeFields relationships for the current parent entity in Dataverse. Continue?"
+                        : "No relationships are configured. Publishing will remove any existing CascadeFields steps for this parent entity if present. Continue?";
+
+                    var confirm = MessageBox.Show(
+                        warnMessage,
+                        "Remove All Relationships",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Warning);
+
+                    if (confirm != DialogResult.Yes)
+                    {
+                        StatusMessage = "Publish cancelled.";
+                        return;
+                    }
+                }
+
+                // Ensure required components are in the selected solution (entities, relationships, fields)
+                if (SelectedSolution != null)
+                {
+                    var (isValid, errors, warnings, missingComponents) = await ValidateConfigurationJsonAsync(config.ToJson(), SelectedSolution.UniqueName);
+
+                    if (!isValid && errors.Any())
+                    {
+                        StatusMessage = errors.First();
+                        return;
+                    }
+
+                    if (missingComponents.Any())
+                    {
+                        progress.Report($"Adding {missingComponents.Count} related components to solution '{SelectedSolution.UniqueName}'...");
+                        await _configurationService.AddComponentsToSolutionAsync(SelectedSolution.Id, missingComponents, progress);
+                    }
+                }
 
                 // Check plugin status before publishing
                 var pluginCheckResult = await CheckAndUpdatePluginIfNeededAsync(progress);
@@ -824,6 +965,16 @@ namespace CascadeFields.Configurator.ViewModels
                     return;
                 }
 
+                var removed = GetRemovedPublishedRelationships(config);
+                if (removed.Any())
+                {
+                    progress.Report($"Removing {removed.Count} relationship(s) from Dataverse...");
+                    await _configurationService.DeleteRelationshipStepsAsync(
+                        SelectedParentEntity!.LogicalName,
+                        removed,
+                        progress);
+                }
+
                 await _configurationService.PublishConfigurationAsync(
                     config,
                     progress,
@@ -831,6 +982,11 @@ namespace CascadeFields.Configurator.ViewModels
 
                 StatusMessage = "Configuration published successfully.";
                 HasChanges = false;
+                foreach (var tab in RelationshipTabs)
+                {
+                    tab.IsPublished = true;
+                }
+                _lastPublishedConfiguration = CascadeConfigurationModel.FromJson(config.ToJson());
             }
             catch (Exception ex)
             {
@@ -890,12 +1046,12 @@ namespace CascadeFields.Configurator.ViewModels
                     return false;
                 }
 
-                // Plugin registered but needs update
+                // Plugin registered but needs update (assembly or file version mismatch)
                 if (status.needsUpdate)
                 {
-                        progress.Report($"Plugin version mismatch detected.");
+                    progress.Report($"Plugin version mismatch detected.");
                     var result = System.Windows.Forms.MessageBox.Show(
-                        $"The registered plugin version differs from the assembly version:\n\nRegistered: {status.registeredVersion ?? "Unknown"}\nAssembly: {status.assemblyVersion ?? "Unknown"}\nFile: {status.fileVersion ?? "Unknown"}\n\nWould you like to update the plugin now?",
+                        $"The registered plugin version differs from the local build.\n\nRegistered assembly: {status.registeredVersion ?? "Unknown"}\nRegistered file: {status.registeredFileVersion ?? "Unknown"}\nLocal assembly: {status.assemblyVersion ?? "Unknown"}\nLocal file: {status.fileVersion ?? "Unknown"}\n\nWould you like to update the plugin now?",
                         "Update Plugin",
                         System.Windows.Forms.MessageBoxButtons.YesNo,
                         System.Windows.Forms.MessageBoxIcon.Question);
@@ -910,7 +1066,7 @@ namespace CascadeFields.Configurator.ViewModels
                 }
 
                 // Plugin is current
-                progress.Report($"Plugin is current (version {status.registeredVersion}).");
+                progress.Report($"Plugin is current (assembly {status.registeredVersion}, file {status.registeredFileVersion ?? "unknown"}).");
                 return true;
             }
             catch (Exception ex)
@@ -954,6 +1110,7 @@ namespace CascadeFields.Configurator.ViewModels
         /// </summary>
         private void HookTabEvents(RelationshipTabViewModel tab)
         {
+            tab.PropertyChanged += TabPropertyChanged;
             // Field mappings collection changes
             tab.FieldMappings.CollectionChanged += TabChildCollectionChanged;
             // Filter criteria collection changes
@@ -975,6 +1132,7 @@ namespace CascadeFields.Configurator.ViewModels
         /// </summary>
         private void UnhookTabEvents(RelationshipTabViewModel tab)
         {
+            tab.PropertyChanged -= TabPropertyChanged;
             tab.FieldMappings.CollectionChanged -= TabChildCollectionChanged;
             tab.FilterCriteria.CollectionChanged -= TabChildCollectionChanged;
 
@@ -1024,6 +1182,20 @@ namespace CascadeFields.Configurator.ViewModels
             ScheduleSave();
         }
 
+        private void TabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            // Only respond to tab-level configuration changes
+            if (e.PropertyName is nameof(RelationshipTabViewModel.UseRelationship)
+                or nameof(RelationshipTabViewModel.LookupFieldName)
+                or nameof(RelationshipTabViewModel.SelectedRelationship)
+                or nameof(RelationshipTabViewModel.TabName))
+            {
+                UpdateJsonPreview();
+                OnPropertyChanged(nameof(IsConfigurationValid));
+                ScheduleSave();
+            }
+        }
+
         /// <summary>
         /// Builds a configuration model from the current ViewModel state
         /// </summary>
@@ -1044,6 +1216,34 @@ namespace CascadeFields.Configurator.ViewModels
                     .Select(t => t.ToRelatedEntityConfig())
                     .ToList()
             };
+        }
+
+        private List<RelatedEntityConfigModel> GetRemovedPublishedRelationships(CascadeConfigurationModel currentConfig)
+        {
+            var removed = new List<RelatedEntityConfigModel>();
+            if (_lastPublishedConfiguration == null)
+                return removed;
+
+            var currentKeys = new HashSet<string>(
+                currentConfig.RelatedEntities.Select(BuildRelationshipKey),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var published in _lastPublishedConfiguration.RelatedEntities)
+            {
+                if (!currentKeys.Contains(BuildRelationshipKey(published)))
+                {
+                    removed.Add(published);
+                }
+            }
+
+            return removed;
+        }
+
+        private static string BuildRelationshipKey(RelatedEntityConfigModel related)
+        {
+            var relationship = related.RelationshipName ?? string.Empty;
+            var lookup = related.LookupFieldName ?? string.Empty;
+            return $"{related.EntityName}|{relationship}|{lookup}".ToLowerInvariant();
         }
 
         public async Task<(bool isValid, List<string> errors, List<string> warnings, List<(int componentType, Guid componentId, string description)> missingComponents)> ValidateConfigurationJsonAsync(string json, string? currentSolutionUniqueName)

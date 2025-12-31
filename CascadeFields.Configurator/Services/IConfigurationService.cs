@@ -53,12 +53,17 @@ namespace CascadeFields.Configurator.Services
         /// Checks the status of the CascadeFields plugin
         /// </summary>
         /// <param name="assemblyPath">Path to CascadeFields.Plugin.dll to compare version</param>
-        /// <returns>Tuple: (isRegistered, needsUpdate, registeredVersion, assemblyVersion, fileVersion)</returns>
-        (bool isRegistered, bool needsUpdate, string? registeredVersion, string? assemblyVersion, string? fileVersion) CheckPluginStatus(string assemblyPath);
+        /// <returns>Tuple: (isRegistered, needsUpdate, registeredAssemblyVersion, localAssemblyVersion, localFileVersion, registeredFileVersion)</returns>
+        (bool isRegistered, bool needsUpdate, string? registeredVersion, string? assemblyVersion, string? fileVersion, string? registeredFileVersion) CheckPluginStatus(string assemblyPath);
 
         /// <summary>
         /// Adds minimal components (entities/attributes/relationships) to a solution if missing
         /// </summary>
         Task AddComponentsToSolutionAsync(Guid solutionId, IEnumerable<(int componentType, Guid componentId, string description)> components, IProgress<string> progress);
+
+        /// <summary>
+        /// Deletes previously published relationship steps that were removed in the configurator.
+        /// </summary>
+        Task DeleteRelationshipStepsAsync(string parentEntityLogicalName, IEnumerable<RelatedEntityConfigModel> relationships, IProgress<string> progress);
     }
 }
