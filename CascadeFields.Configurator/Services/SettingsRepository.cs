@@ -17,6 +17,9 @@ namespace CascadeFields.Configurator.Services
     {
         private readonly string _settingsPath;
 
+        /// <summary>
+        /// Initializes the repository and ensures the settings folder exists.
+        /// </summary>
         public SettingsRepository()
         {
             _settingsPath = Path.Combine(
@@ -28,6 +31,9 @@ namespace CascadeFields.Configurator.Services
             Directory.CreateDirectory(_settingsPath);
         }
 
+        /// <summary>
+        /// Loads the saved session for a specific connection ID, if present.
+        /// </summary>
         public async Task<SessionState?> LoadSessionAsync(string connectionId)
         {
             if (string.IsNullOrWhiteSpace(connectionId))
@@ -51,6 +57,9 @@ namespace CascadeFields.Configurator.Services
             }
         }
 
+        /// <summary>
+        /// Persists a session snapshot to disk for the given connection.
+        /// </summary>
         public async Task SaveSessionAsync(SessionState session)
         {
             if (session == null)
@@ -74,6 +83,9 @@ namespace CascadeFields.Configurator.Services
             }
         }
 
+        /// <summary>
+        /// Removes the persisted session file for a connection.
+        /// </summary>
         public async Task ClearSessionAsync(string connectionId)
         {
             if (string.IsNullOrWhiteSpace(connectionId))
@@ -97,6 +109,9 @@ namespace CascadeFields.Configurator.Services
             await Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Retrieves all saved sessions across connections, skipping invalid files.
+        /// </summary>
         public async Task<Dictionary<string, SessionState>> GetAllSessionsAsync()
         {
             var sessions = new Dictionary<string, SessionState>();

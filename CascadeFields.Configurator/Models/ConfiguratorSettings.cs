@@ -4,6 +4,9 @@ using System.Linq;
 
 namespace CascadeFields.Configurator.Models
 {
+    /// <summary>
+    /// Root settings model persisted between runs (per connection key).
+    /// </summary>
     public class ConfiguratorSettings
     {
         public List<SessionSettings> Sessions { get; set; } = new();
@@ -22,6 +25,9 @@ namespace CascadeFields.Configurator.Models
         }
     }
 
+    /// <summary>
+    /// Persisted session payload for a single connection.
+    /// </summary>
     public class SessionSettings
     {
         public string ConnectionKey { get; set; } = string.Empty;
@@ -30,7 +36,9 @@ namespace CascadeFields.Configurator.Models
         public string? ConfigurationJson { get; set; }
     }
 
-    // Internal model for filter criteria - used within the control for UI binding
+    /// <summary>
+    /// Internal filter shape used by grid controls when reading legacy filter strings.
+    /// </summary>
     public class SavedFilterCriteria
     {
         public string? Field { get; set; }

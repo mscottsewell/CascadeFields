@@ -5,6 +5,9 @@ using System.Windows.Forms;
 
 namespace CascadeFields.Configurator.Dialogs
 {
+    /// <summary>
+    /// Represents a configured parent entity and its child relationships for the picker grid.
+    /// </summary>
     public class ParentEntityItem
     {
         public string ParentEntity { get; set; } = string.Empty;
@@ -14,6 +17,9 @@ namespace CascadeFields.Configurator.Dialogs
         public DateTime LastModified { get; set; }
     }
 
+    /// <summary>
+    /// Lightweight child entity descriptor used for the nested list shown in the grid.
+    /// </summary>
     public class ChildEntityInfo
     {
         public string DisplayName { get; set; } = string.Empty;
@@ -23,6 +29,9 @@ namespace CascadeFields.Configurator.Dialogs
         public override string ToString() => $"{DisplayName} ({LookupFieldDisplayName}) ({RelationshipName})";
     }
 
+    /// <summary>
+    /// Picker dialog that lists previously configured parent entities so users can reopen them.
+    /// </summary>
     public partial class ParentEntityPickerDialog : Form
     {
         private readonly List<ParentEntityItem> _parents;

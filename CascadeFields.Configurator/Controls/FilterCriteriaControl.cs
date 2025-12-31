@@ -9,6 +9,9 @@ using CascadeFields.Configurator.Models.UI;
 
 namespace CascadeFields.Configurator.Controls
 {
+    /// <summary>
+    /// Legacy filter editor used by the older UI; kept for backward compatibility and quick edits.
+    /// </summary>
     public partial class FilterCriteriaControl : UserControl
     {
         private readonly BindingList<FilterRow> _filterRows = new();

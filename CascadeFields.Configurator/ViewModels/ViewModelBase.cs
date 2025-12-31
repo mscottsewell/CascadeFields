@@ -5,8 +5,7 @@ using System.Runtime.CompilerServices;
 namespace CascadeFields.Configurator.ViewModels
 {
     /// <summary>
-    /// Base class for all ViewModels
-    /// Provides INotifyPropertyChanged implementation for data binding
+    /// Base class for all ViewModels providing INotifyPropertyChanged helpers for WinForms binding.
     /// </summary>
     public abstract class ViewModelBase : INotifyPropertyChanged
     {

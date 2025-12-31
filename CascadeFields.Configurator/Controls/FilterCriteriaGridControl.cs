@@ -9,8 +9,7 @@ using CascadeFields.Configurator.Models.UI;
 namespace CascadeFields.Configurator.Controls
 {
     /// <summary>
-    /// Control for managing filter criteria
-    /// Binds to ObservableCollection<FilterCriterionViewModel>
+    /// Grid control for filter criteria; binds to ObservableCollection&lt;FilterCriterionViewModel&gt;.
     /// </summary>
     public partial class FilterCriteriaGridControl : UserControl
     {

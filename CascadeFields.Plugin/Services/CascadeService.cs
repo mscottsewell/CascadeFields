@@ -189,6 +189,9 @@ namespace CascadeFields.Plugin.Services
             _tracer.EndOperation("ApplyParentValuesToChildOnAttachOrCreate");
         }
 
+        /// <summary>
+        /// Determines whether the configured lookup on the child changed between pre-image and target.
+        /// </summary>
         private bool HasLookupChanged(Entity target, Entity preImage, string lookupField)
         {
             if (!target.Contains(lookupField))
@@ -201,6 +204,9 @@ namespace CascadeFields.Plugin.Services
             return !AreValuesEqual(newRef, oldRef);
         }
 
+        /// <summary>
+        /// Verifies a single child row matches the optional filter criteria before applying mappings.
+        /// </summary>
         private bool ChildMatchesFilter(string childEntityName, Guid childId, RelatedEntityConfig relatedConfig)
         {
             try
@@ -324,6 +330,9 @@ namespace CascadeFields.Plugin.Services
             }
         }
 
+        /// <summary>
+        /// Builds a dictionary of target-field values for a specific related entity based on the mapping set.
+        /// </summary>
         private Dictionary<string, object> GetValuesToCascade(Entity target, Entity preImage, RelatedEntityConfig relatedEntityConfig)
         {
             var values = new Dictionary<string, object>();
@@ -348,6 +357,9 @@ namespace CascadeFields.Plugin.Services
             return values;
         }
 
+        /// <summary>
+        /// Resolves the mapped value for a target field, performing type-aware conversions when needed.
+        /// </summary>
         private object GetMappedValueForTarget(Entity sourceEntity, FieldMapping mapping, string targetEntityName)
         {
             var mappedValue = sourceEntity[mapping.SourceField];
@@ -372,6 +384,9 @@ namespace CascadeFields.Plugin.Services
             return mappedValue;
         }
 
+        /// <summary>
+        /// Retrieves and caches attribute metadata so type and length can guide conversions and truncation.
+        /// </summary>
         private AttributeMetadata GetTargetAttributeMetadata(string entityLogicalName, string attributeLogicalName)
         {
             if (string.IsNullOrWhiteSpace(entityLogicalName) || string.IsNullOrWhiteSpace(attributeLogicalName))
@@ -412,6 +427,9 @@ namespace CascadeFields.Plugin.Services
             }
         }
 
+        /// <summary>
+        /// Converts a lookup/optionset/primitive value into a user-friendly string using formatted values when available.
+        /// </summary>
         private string ConvertToTextValue(object rawValue, string formattedValue)
         {
             if (rawValue == null) return null;
@@ -434,6 +452,9 @@ namespace CascadeFields.Plugin.Services
             return rawValue.ToString();
         }
 
+        /// <summary>
+        /// Applies safe truncation with ellipsis when the target attribute is length-constrained.
+        /// </summary>
         private string ApplyTruncationIfNeeded(string textValue, AttributeMetadata targetAttributeMetadata, string targetAttributeLogicalName)
         {
             if (string.IsNullOrEmpty(textValue) || targetAttributeMetadata == null)
@@ -469,6 +490,9 @@ namespace CascadeFields.Plugin.Services
             return truncatedText;
         }
 
+        /// <summary>
+        /// Executes the cascade for a single related-entity configuration, retrieving children and applying updates.
+        /// </summary>
         private void CascadeToRelatedEntity(Guid parentId, Dictionary<string, object> values, 
             RelatedEntityConfig relatedConfig, ModelCascadeConfiguration config)
         {
@@ -499,6 +523,9 @@ namespace CascadeFields.Plugin.Services
             }
         }
 
+        /// <summary>
+        /// Retrieves related child records using either a relationship or explicit lookup field path.
+        /// </summary>
         private List<Entity> RetrieveRelatedRecords(Guid parentId, RelatedEntityConfig relatedConfig, 
             ModelCascadeConfiguration config)
         {
@@ -532,6 +559,9 @@ namespace CascadeFields.Plugin.Services
             }
         }
 
+        /// <summary>
+        /// Builds a query that uses the configured relationship name to locate child rows.
+        /// </summary>
         private QueryExpression BuildQueryWithRelationship(Guid parentId, RelatedEntityConfig relatedConfig, 
             ModelCascadeConfiguration config)
         {
@@ -570,6 +600,9 @@ namespace CascadeFields.Plugin.Services
             return query;
         }
 
+        /// <summary>
+        /// Builds a query that filters child rows by an explicit lookup field value.
+        /// </summary>
         private QueryExpression BuildQueryWithLookupField(Guid parentId, RelatedEntityConfig relatedConfig)
         {
             var query = new QueryExpression(relatedConfig.EntityName)
@@ -591,6 +624,9 @@ namespace CascadeFields.Plugin.Services
             return query;
         }
 
+        /// <summary>
+        /// Parses simple pipe-delimited filter criteria into QueryExpression conditions with basic validation.
+        /// </summary>
         private void AddFilterCriteria(QueryExpression query, string filterCriteria)
         {
             try
@@ -633,6 +669,9 @@ namespace CascadeFields.Plugin.Services
             }
         }
 
+        /// <summary>
+        /// Converts a user-provided operator string into a ConditionOperator enum value.
+        /// </summary>
         private ConditionOperator ParseOperator(string operatorStr)
         {
             switch (operatorStr.ToLower())
@@ -668,6 +707,9 @@ namespace CascadeFields.Plugin.Services
             }
         }
 
+        /// <summary>
+        /// Parses string literal values into typed objects used by query conditions (supports null/bool/int/guid/string).
+        /// </summary>
         private object ParseValue(string value)
         {
             if (value.Equals("null", StringComparison.OrdinalIgnoreCase))
@@ -834,6 +876,9 @@ namespace CascadeFields.Plugin.Services
             // }
         }
 
+        /// <summary>
+        /// Compares CRM types and primitives for equality, handling common SDK wrapper types safely.
+        /// </summary>
         private bool AreValuesEqual(object value1, object value2)
         {
             if (value1 == null && value2 == null) return true;

@@ -5,6 +5,9 @@ using CascadeConfigurationModel = CascadeFields.Plugin.Models.CascadeConfigurati
 
 namespace CascadeFields.Configurator.Models.UI
 {
+    /// <summary>
+    /// UI-friendly representation of a solution record used for combo boxes.
+    /// </summary>
     public class SolutionItem
     {
         public Guid Id { get; set; }
@@ -14,6 +17,9 @@ namespace CascadeFields.Configurator.Models.UI
         public override string ToString() => FriendlyName;
     }
 
+    /// <summary>
+    /// UI-friendly representation of an entity including resolved metadata for display.
+    /// </summary>
     public class EntityItem
     {
         public string LogicalName { get; set; } = string.Empty;
@@ -30,6 +36,9 @@ namespace CascadeFields.Configurator.Models.UI
             : $"{DisplayName} ({LogicalName})";
     }
 
+    /// <summary>
+    /// Describes a relationship option for selection in dialogs and tabs.
+    /// </summary>
     public class RelationshipItem
     {
         public string SchemaName { get; set; } = string.Empty;
@@ -49,6 +58,9 @@ namespace CascadeFields.Configurator.Models.UI
         public override string ToString() => DisplayText;
     }
 
+    /// <summary>
+    /// Describes an attribute and provides display helpers for drop-downs.
+    /// </summary>
     public class AttributeItem
     {
         public string LogicalName { get; set; } = string.Empty;
@@ -66,6 +78,9 @@ namespace CascadeFields.Configurator.Models.UI
             : $"{DisplayName} ({LogicalName})";
     }
 
+    /// <summary>
+    /// Legacy mapping shape kept for designer-bound controls.
+    /// </summary>
     internal class MappingRow
     {
         public string? SourceField { get; set; }
@@ -73,6 +88,9 @@ namespace CascadeFields.Configurator.Models.UI
         public bool IsTriggerField { get; set; } = true;
     }
 
+    /// <summary>
+    /// Filter row used by the WinForms filter grid binding.
+    /// </summary>
     internal class FilterRow
     {
         public string? Field { get; set; }
@@ -80,6 +98,9 @@ namespace CascadeFields.Configurator.Models.UI
         public string? Value { get; set; }
     }
 
+    /// <summary>
+    /// UI-friendly operator descriptor used by drop-downs and serialization.
+    /// </summary>
     internal class FilterOperator
     {
         public string Code { get; set; } = string.Empty;
@@ -101,6 +122,9 @@ namespace CascadeFields.Configurator.Models.UI
         };
     }
 
+    /// <summary>
+    /// Represents a relationship already configured in Dataverse for listing and reload.
+    /// </summary>
     public class ConfiguredRelationship
     {
         public string ParentEntity { get; set; } = string.Empty;

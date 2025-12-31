@@ -6,11 +6,17 @@ using Newtonsoft.Json;
 
 namespace CascadeFields.Configurator.Services
 {
+    /// <summary>
+    /// Lightweight static helper for persisting configurator-level settings (non-connection specific) to disk.
+    /// </summary>
     internal static class SettingsStorage
     {
         private static readonly string AppFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CascadeFields.Configurator");
         private static readonly string SettingsFile = Path.Combine(AppFolder, "settings.json");
 
+        /// <summary>
+        /// Attempts to load persisted settings; returns null on first run or when deserialization fails.
+        /// </summary>
         public static ConfiguratorSettings? Load()
         {
             try
@@ -29,6 +35,9 @@ namespace CascadeFields.Configurator.Services
             }
         }
 
+        /// <summary>
+        /// Saves settings to disk, ignoring any IO errors because preferences are non-critical.
+        /// </summary>
         public static void Save(ConfiguratorSettings settings)
         {
             try

@@ -10,8 +10,7 @@ using CascadeFields.Configurator.ViewModels;
 namespace CascadeFields.Configurator.Controls
 {
     /// <summary>
-    /// Encapsulated DataGridView control for field mapping rows
-    /// Binds to ObservableCollection<FieldMappingViewModel>
+    /// Encapsulated DataGridView for field mappings; binds to ObservableCollection<FieldMappingViewModel>.
     /// </summary>
     public class FieldMappingGridControl : UserControl
     {

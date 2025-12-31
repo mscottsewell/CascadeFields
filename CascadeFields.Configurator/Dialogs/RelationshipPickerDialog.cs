@@ -6,6 +6,9 @@ using CascadeFields.Configurator.Models.UI;
 
 namespace CascadeFields.Configurator.Dialogs
 {
+    /// <summary>
+    /// Dialog that lists available relationships to add for the selected parent entity.
+    /// </summary>
     internal class RelationshipPickerDialog : Form
     {
         private readonly DataGridView _grid;

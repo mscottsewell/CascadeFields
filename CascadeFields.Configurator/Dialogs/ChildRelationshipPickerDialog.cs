@@ -6,6 +6,9 @@ using CascadeFields.Configurator.Models.UI;
 
 namespace CascadeFields.Configurator.Dialogs
 {
+    /// <summary>
+    /// Dialog that presents child relationships for the selected parent so the user can choose one to configure.
+    /// </summary>
     public partial class ChildRelationshipPickerDialog : Form
     {
         private readonly List<RelationshipItem> _availableRelationships;

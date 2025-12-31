@@ -26,13 +26,13 @@ namespace CascadeFields.Configurator.Services
         /// Gets all attributes for a specific entity
         /// </summary>
         /// <param name="entityLogicalName">Logical name of the entity</param>
-        Task<List<AttributeItem>> GetAttributesAsync(string entityLogicalName);
+        Task<List<AttributeItem>> GetAttributesAsync(string entityLogicalName, bool includeReadOnly = false, bool includeLogical = false);
 
         /// <summary>
         /// Gets all child relationships for a parent entity
         /// </summary>
         /// <param name="parentEntityLogicalName">Logical name of the parent entity</param>
-        Task<List<RelationshipItem>> GetChildRelationshipsAsync(string parentEntityLogicalName);
+        Task<List<RelationshipItem>> GetChildRelationshipsAsync(string parentEntityLogicalName, string? solutionUniqueName = null);
 
         /// <summary>
         /// Gets entity metadata by logical name

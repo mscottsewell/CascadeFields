@@ -13,15 +13,24 @@ using Microsoft.Xrm.Sdk.Query;
 
 namespace CascadeFields.Configurator.Services
 {
+    /// <summary>
+    /// Provides Dataverse metadata queries used by the configurator UI for solutions, entities, attributes, and relationships.
+    /// </summary>
     public class MetadataService : IMetadataService
     {
         private readonly IOrganizationService _service;
 
+        /// <summary>
+        /// Initializes a metadata service bound to a specific organization service.
+        /// </summary>
         public MetadataService(IOrganizationService service)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
         }
 
+        /// <summary>
+        /// Returns unmanaged, visible solutions, with the Default solution pinned to the top for convenience.
+        /// </summary>
         public Task<List<SolutionItem>> GetUnmanagedSolutionsAsync()
         {
             return Task.Run(() =>
@@ -60,6 +69,9 @@ namespace CascadeFields.Configurator.Services
             });
         }
 
+        /// <summary>
+        /// Retrieves entity metadata for entities that belong to a specific solution, using MetadataChanges for performance.
+        /// </summary>
         public Task<List<EntityMetadata>> GetSolutionEntitiesAsync(string solutionUniqueName)
         {
             if (string.IsNullOrWhiteSpace(solutionUniqueName))
@@ -182,6 +194,9 @@ namespace CascadeFields.Configurator.Services
             });
         }
 
+        /// <summary>
+        /// Retrieves full entity metadata (entity/attributes/relationships) for a single logical name.
+        /// </summary>
         public Task<EntityMetadata> GetEntityMetadataAsync(string logicalName)
         {
             if (string.IsNullOrWhiteSpace(logicalName))
@@ -195,7 +210,8 @@ namespace CascadeFields.Configurator.Services
                 {
                     LogicalName = logicalName,
                     EntityFilters = EntityFilters.Entity | EntityFilters.Attributes | EntityFilters.Relationships,
-                    RetrieveAsIfPublished = false
+                    // Use published metadata to ensure all attributes (including ones not in the current solution) are returned
+                    RetrieveAsIfPublished = true
                 };
 
                 var response = (RetrieveEntityResponse)_service.Execute(request);
@@ -203,7 +219,10 @@ namespace CascadeFields.Configurator.Services
             });
         }
 
-        public Task<List<AttributeItem>> GetAttributesAsync(string entityLogicalName)
+        /// <summary>
+        /// Returns updatable attributes for an entity as simplified items for UI binding.
+        /// </summary>
+        public Task<List<AttributeItem>> GetAttributesAsync(string entityLogicalName, bool includeReadOnly = false, bool includeLogical = false)
         {
             return Task.Run(async () =>
             {
@@ -211,11 +230,14 @@ namespace CascadeFields.Configurator.Services
                 if (metadata == null)
                     return new List<AttributeItem>();
 
-                return GetAttributeItems(metadata).ToList();
+                return GetAttributeItems(metadata, null, includeReadOnly, includeLogical).ToList();
             });
         }
 
-        public Task<List<RelationshipItem>> GetChildRelationshipsAsync(string parentEntityLogicalName)
+        /// <summary>
+        /// Resolves child relationships for a parent entity using the specified solution (or Active as default) as the entity set.
+        /// </summary>
+        public Task<List<RelationshipItem>> GetChildRelationshipsAsync(string parentEntityLogicalName, string? solutionUniqueName = null)
         {
             return Task.Run(async () =>
             {
@@ -224,7 +246,8 @@ namespace CascadeFields.Configurator.Services
                     return new List<RelationshipItem>();
 
                 // Get all entities for relationship resolution
-                var allEntities = (await GetSolutionEntitiesAsync("Active")).ToList();
+                var solutionName = string.IsNullOrWhiteSpace(solutionUniqueName) ? "Active" : solutionUniqueName;
+                var allEntities = (await GetSolutionEntitiesAsync(solutionName ?? "Active")).ToList();
                 if (allEntities.Count == 0)
                     return new List<RelationshipItem>();
 
@@ -232,7 +255,10 @@ namespace CascadeFields.Configurator.Services
             });
         }
 
-        public IEnumerable<AttributeItem> GetAttributeItems(EntityMetadata entity, HashSet<string>? formFields = null)
+        /// <summary>
+        /// Builds attribute items, optionally restricted to a set of form fields.
+        /// </summary>
+        public IEnumerable<AttributeItem> GetAttributeItems(EntityMetadata entity, HashSet<string>? formFields = null, bool includeReadOnly = false, bool includeLogical = false)
         {
             if (entity?.Attributes == null)
             {
@@ -240,7 +266,8 @@ namespace CascadeFields.Configurator.Services
             }
 
             var attributes = entity.Attributes
-                .Where(a => a.IsValidForUpdate == true && !a.IsLogical.GetValueOrDefault())
+                .Where(a => includeLogical || !a.IsLogical.GetValueOrDefault())
+                .Where(a => includeReadOnly || a.IsValidForUpdate == true)
                 .Where(a => formFields == null || formFields.Count == 0 || formFields.Contains(a.LogicalName))
                 .Select(a => new AttributeItem
                 {
@@ -254,6 +281,9 @@ namespace CascadeFields.Configurator.Services
             return attributes;
         }
 
+        /// <summary>
+        /// Builds attribute items for filtering, always including state/status even if not on the form.
+        /// </summary>
         public IEnumerable<AttributeItem> GetFilterAttributeItems(EntityMetadata entity, HashSet<string>? formFields = null)
         {
             if (entity?.Attributes == null)
@@ -277,6 +307,9 @@ namespace CascadeFields.Configurator.Services
             return attributes;
         }
 
+        /// <summary>
+        /// Builds a list of child relationship items for display, including friendly names for entities and lookup attributes.
+        /// </summary>
         public IEnumerable<RelationshipItem> GetChildRelationships(EntityMetadata parent, IReadOnlyCollection<EntityMetadata> allEntities)
         {
             if (parent?.OneToManyRelationships == null)
@@ -284,8 +317,10 @@ namespace CascadeFields.Configurator.Services
                 return Enumerable.Empty<RelationshipItem>();
             }
 
+
             // Only include relationships where the referencing entity exists in the current solution set.
-            // DO NOT group - we want all relationships shown, even if multiple exist from same child entity
+            // The relationship component itself may not be in the solution, but the entity must be.
+            // DO NOT group - we want all relationships shown, even if multiple exist from the same child entity
             var relationships = parent.OneToManyRelationships
                 .Where(r => string.Equals(r.ReferencedEntity, parent.LogicalName, StringComparison.OrdinalIgnoreCase))
                 .Where(r => !string.IsNullOrWhiteSpace(r.ReferencingEntity) && !string.IsNullOrWhiteSpace(r.ReferencingAttribute))
@@ -293,6 +328,11 @@ namespace CascadeFields.Configurator.Services
                 {
                     Relationship = r,
                     Child = allEntities.FirstOrDefault(e => string.Equals(e.LogicalName, r.ReferencingEntity, StringComparison.OrdinalIgnoreCase))
+                })
+                .Select(x => new
+                {
+                    x.Relationship,
+                    x.Child
                 })
                 .Where(x => x.Child != null)
                 .Select(x =>
@@ -332,6 +372,9 @@ namespace CascadeFields.Configurator.Services
             return relationships;
         }
 
+        /// <summary>
+        /// Parses Dataverse form XML to extract bound field logical names.
+        /// </summary>
         public HashSet<string> GetFieldsFromFormXml(string formXml)
         {
             var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

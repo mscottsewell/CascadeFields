@@ -8,12 +8,17 @@ param(
     [string]$XrmToolBoxPluginsPath = "$env:APPDATA\MscrmTools\XrmToolBox\Plugins"
 )
 
+# Builds, packs, and optionally deploys the configurator + plugin payload.
+# When SkipVersionBump is set, the AssemblyInfo version is reused (helpful for CI repeatability).
+# SkipDeploy keeps artifacts local; SkipPush avoids pushing to NuGet.
+
 $ErrorActionPreference = "Stop"
 
 function Write-Info($message) {
     Write-Host $message -ForegroundColor Cyan
 }
 
+# Ensures we have a nuget.exe meeting the minimum supported version; downloads locally if missing/old.
 function Ensure-NugetExe {
     $minimumNugetVersion = [Version]"5.10.0"
 

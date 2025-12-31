@@ -1,6 +1,13 @@
 # CascadeFields Plugin for Microsoft Dataverse
 
-A flexible, configurable plugin for Microsoft Dataverse (Dynamics 365) that automatically cascades field values from parent records to related child records, and populates child records when created or relinked to a parent.
+A flexible, configurable plugin for Microsoft Dataverse (Dynamics 365) that automatically cascades field values from parent records to related child records, and populates child records when created or relinked to a parent. You can run the plugin on its own via the Plugin Registration Tool, but the fastest path is the XrmToolBox **CascadeFields Configurator**, which handles step creation, publishing, and validation for you.
+
+## Overview: Why It Helps
+
+- End-to-end path from configuration design to deployment without writing code or manually wiring steps
+- Keeps parent and child records in sync with trigger-aware cascades and safe filtering
+- Ready-to-use templates and examples so you can start from proven setups and tweak as needed
+- Easiest path: open XrmToolBox → CascadeFields Configurator → author mappings in the UI → click Publish. The tool writes the JSON, registers steps, and validates lookup fields automatically.
 
 ## 📚 Documentation
 
@@ -24,12 +31,14 @@ A flexible, configurable plugin for Microsoft Dataverse (Dynamics 365) that auto
 ## How It Works
 
 ### Parent-Side Cascade (Parent Update → Children)
+
 1. Plugin registers on **Update** message of parent entity (Post-operation, Async)
 2. When parent is updated, plugin checks if any configured trigger fields changed
 3. If triggered, retrieves related child records based on lookup fields and filters
 4. Updates specified fields on matching child records with values from parent
 
 ### Child-Side Population (Child Created/Relinked → Copy from Parent)
+
 1. Plugin registers on **Create** and **Update** messages of child entities (Pre-operation, Sync)
 2. When child is created with parent lookup, or parent lookup changes, plugin detects it
 3. Retrieves parent record and extracts mapped field values
@@ -38,6 +47,7 @@ A flexible, configurable plugin for Microsoft Dataverse (Dynamics 365) that auto
 ## Configuration
 
 See **[CONFIGURATION.md](CONFIGURATION.md)** for detailed configuration guide including:
+
 - Best practices and recommended patterns
 - Filter criteria syntax and examples
 - Field mapping strategies
@@ -111,6 +121,7 @@ Basic JSON structure:
 ### Lookup / Option Set to Text Targets
 
 When the target field is text and source is a lookup or option set:
+
 - **Lookup**: Uses display name, falls back to formatted value or GUID
 - **OptionSet**: Uses label text, falls back to numeric value
 - Automatically truncates with ellipsis (…) if too long for target field

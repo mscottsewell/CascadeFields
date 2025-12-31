@@ -30,7 +30,7 @@ namespace CascadeFields.Configurator.Models.Domain
         public List<RelatedEntityConfigModel> RelatedEntities { get; set; } = new();
 
         /// <summary>
-        /// Validates the configuration
+        /// Validates the configuration and all child relationships before publish/serialize.
         /// </summary>
         public void Validate()
         {
@@ -47,7 +47,7 @@ namespace CascadeFields.Configurator.Models.Domain
         }
 
         /// <summary>
-        /// Converts this model to JSON string
+        /// Converts this model to indented JSON used by the configurator UI and plugin.
         /// </summary>
         public string ToJson()
         {
@@ -55,7 +55,7 @@ namespace CascadeFields.Configurator.Models.Domain
         }
 
         /// <summary>
-        /// Creates a model from JSON string
+        /// Parses a JSON payload into a cascade configuration model.
         /// </summary>
         public static CascadeConfigurationModel FromJson(string json)
         {
@@ -91,7 +91,7 @@ namespace CascadeFields.Configurator.Models.Domain
         public List<FieldMappingModel> FieldMappings { get; set; } = new();
 
         /// <summary>
-        /// Validates the related entity configuration
+        /// Validates the related entity configuration to ensure relationship/lookup consistency and mappings exist.
         /// </summary>
         public void Validate()
         {
@@ -129,7 +129,7 @@ namespace CascadeFields.Configurator.Models.Domain
         public bool IsTriggerField { get; set; } = true;
 
         /// <summary>
-        /// Validates the field mapping
+        /// Validates that a field mapping includes both source and target fields.
         /// </summary>
         public void Validate()
         {
@@ -151,7 +151,7 @@ namespace CascadeFields.Configurator.Models.Domain
         public string? Value { get; set; }
 
         /// <summary>
-        /// Validates the filter criterion
+        /// Validates the filter criterion has the required pieces before serialization.
         /// </summary>
         public void Validate()
         {
@@ -163,7 +163,7 @@ namespace CascadeFields.Configurator.Models.Domain
         }
 
         /// <summary>
-        /// Converts to the pipe-delimited filter string format
+        /// Converts to the pipe-delimited filter string format consumed by the plugin.
         /// </summary>
         public string ToFilterString()
         {
@@ -171,7 +171,7 @@ namespace CascadeFields.Configurator.Models.Domain
         }
 
         /// <summary>
-        /// Parses a filter string into a FilterCriterionModel
+        /// Parses a pipe-delimited filter string into a FilterCriterionModel instance.
         /// </summary>
         public static FilterCriterionModel? FromFilterString(string filterString)
         {

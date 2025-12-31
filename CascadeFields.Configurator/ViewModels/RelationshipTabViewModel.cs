@@ -110,7 +110,7 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Initializes the tab by loading metadata
+        /// Loads parent/child attribute metadata for drop-downs used by mapping and filter grids.
         /// </summary>
         public async Task InitializeAsync()
         {
@@ -119,7 +119,11 @@ namespace CascadeFields.Configurator.ViewModels
             try
             {
                 // Load parent attributes
-                var parentAttrs = await _metadataService.GetAttributesAsync(ParentEntityLogicalName);
+                // Source field should allow read-only and logical attributes (e.g., address composites) for mapping
+                var parentAttrs = await _metadataService.GetAttributesAsync(
+                    ParentEntityLogicalName,
+                    includeReadOnly: true,
+                    includeLogical: true);
                 ParentAttributes.Clear();
                 foreach (var attr in parentAttrs.OrderBy(a => a.DisplayName))
                 {
@@ -127,7 +131,11 @@ namespace CascadeFields.Configurator.ViewModels
                 }
 
                 // Load child attributes
-                var childAttrs = await _metadataService.GetAttributesAsync(ChildEntityLogicalName);
+                // Target field: allow logical attributes (e.g., address composites) but keep read-only excluded
+                var childAttrs = await _metadataService.GetAttributesAsync(
+                    ChildEntityLogicalName,
+                    includeReadOnly: false,
+                    includeLogical: true);
                 ChildAttributes.Clear();
                 foreach (var attr in childAttrs.OrderBy(a => a.DisplayName))
                 {
@@ -141,7 +149,7 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Converts this ViewModel to a domain model
+        /// Converts this tab into the domain model used by plugin publishing.
         /// </summary>
         public RelatedEntityConfigModel ToRelatedEntityConfig()
         {
@@ -179,7 +187,7 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Builds the filter criteria string in pipe-delimited format
+        /// Builds the serialized filter criteria string expected by the plugin (field|op|value blocks).
         /// </summary>
         private string BuildFilterString()
         {
@@ -191,7 +199,7 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Builds a multi-line tab title with child display name, lookup field, and schema name
+        /// Builds a multi-line tab title with child display name, lookup field, and schema name.
         /// </summary>
         private void UpdateTabName()
         {
@@ -218,7 +226,7 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Loads configuration from a domain model
+        /// Populates mappings/filters from a previously saved domain model configuration.
         /// </summary>
         public void LoadFromModel(RelatedEntityConfigModel model)
         {

@@ -6,6 +6,9 @@ using CascadeFields.Configurator.Models.UI;
 
 namespace CascadeFields.Configurator.Dialogs
 {
+    /// <summary>
+    /// Dialog that groups configured relationships by parent entity so a user can reload them.
+    /// </summary>
     internal class ConfigurationPickerDialog : Form
     {
         private readonly ListView _listView;
