@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx markdownlint-cli2 --fix README.md)"
+      "Bash(npx markdownlint-cli2 --fix README.md)",
+      "Bash(test:*)",
+      "Bash(nuget pack:*)",
+      "Bash(nuget help:*)",
+      "Bash(unzip:*)",
+      "Bash(dotnet pack --help:*)",
+      "Bash(dotnet pack:*)",
+      "Bash(ls:*)"
     ]
   }
 }

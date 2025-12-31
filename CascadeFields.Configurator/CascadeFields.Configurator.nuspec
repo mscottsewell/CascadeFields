@@ -1,6 +1,6 @@
-<?xml version="1.0"?>
-<package>
-  <metadata>
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata minClientVersion="5.10.0">
     <id>CascadeFields.Configurator</id>
     <version>$version$</version>
     <title>CascadeFields Configurator</title>
@@ -9,18 +9,22 @@
     <license type="expression">MIT</license>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectUrl>https://github.com/mscottsewell/CascadeFields</projectUrl>
-    <readme>README.md</readme>
-    <iconUrl>https://github.com/mscottsewell/CascadeFields/blob/28729959c1726b0af72a20e96806288bbe1e191e/images/CascadeFieldsConfigurator_32.png</iconUrl>
-    <releaseNotes>Review CHANGELOG or git history for details.</releaseNotes>
+    <summary>XrmToolBox utility to configure and deploy the CascadeFields plugin for Dataverse.</summary>
     <description>XrmToolBox utility to configure and deploy the CascadeFields plugin for Dataverse.</description>
+    <releaseNotes>Review CHANGELOG or git history for details.</releaseNotes>
     <tags>XrmToolBox Dataverse Dynamics CRM Plugin CascadeFields</tags>
+    <icon>icon.png</icon>
+    <readme>README.md</readme>
+    <iconUrl>https://raw.githubusercontent.com/mscottsewell/CascadeFields/master/images/CascadeFieldsConfigurator_80.png</iconUrl>
     <dependencies>
-      <dependency id="XrmToolBoxPackage" version="[1.2025.10.74,)" />
+      <group targetFramework="net462">
+        <dependency id="XrmToolBoxPackage" version="1.2025.10.74" />
+      </group>
     </dependencies>
   </metadata>
   <files>
-    <file src="bin\Release\net462\CascadeFields.Configurator.dll" target="lib\net452\Plugins\" />
-    <file src="Assets\**\*.*" target="lib\net452\Plugins\CascadeFields\Assets\"/>
+    <file src="bin\Release\net462\CascadeFields.Configurator.dll" target="lib\net462\Plugins" />
+    <file src="Assets\**\*.*" target="lib\net462\Plugins\CascadeFieldsConfigurator\Assets"/>
     <file src="Assets\Icon\CascadeFieldsConfigurator_80.png" target="icon.png" />
     <file src="..\README.md" target="README.md" />
     <file src="..\LICENSE" target="LICENSE" />
