@@ -859,7 +859,7 @@ namespace CascadeFields.Configurator.Controls
                     if (!string.IsNullOrWhiteSpace(config.RawJson))
                     {
                         _viewModel.StatusMessage = "Loading configuration...";
-                        await _viewModel.ApplyConfigurationAsync(config.RawJson);
+                        await _viewModel.ApplyConfigurationAsync(config.RawJson, markAsPublished: true);
                     }
                 }
                 else
