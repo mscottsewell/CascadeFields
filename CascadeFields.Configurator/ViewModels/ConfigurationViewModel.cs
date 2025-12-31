@@ -34,6 +34,9 @@ namespace CascadeFields.Configurator.ViewModels
         private readonly ISettingsRepository _settingsRepository;
         private readonly Action<string>? _log;
 
+        /// <summary>
+        /// Gets the configuration service for publishing and managing cascade configurations.
+        /// </summary>
         public IConfigurationService ConfigurationService => _configurationService;
 
         private bool _isConnected;
@@ -152,12 +155,18 @@ namespace CascadeFields.Configurator.ViewModels
             set => SetProperty(ref _statusMessage, value);
         }
 
+        /// <summary>
+        /// Gets or sets the current progress count during loading operations.
+        /// </summary>
         public int LoadingProgressCurrent
         {
             get => _loadingProgressCurrent;
             private set => SetProperty(ref _loadingProgressCurrent, value);
         }
 
+        /// <summary>
+        /// Gets or sets the total expected count for loading operations.
+        /// </summary>
         public int LoadingProgressTotal
         {
             get => _loadingProgressTotal;
@@ -240,16 +249,43 @@ namespace CascadeFields.Configurator.ViewModels
 
         #region Commands
 
+        /// <summary>
+        /// Command to load all unmanaged solutions from the connected Dataverse environment.
+        /// </summary>
         public ICommand LoadSolutionsCommand { get; }
+
+        /// <summary>
+        /// Command to add a new child relationship to the current configuration.
+        /// </summary>
         public ICommand AddRelationshipCommand { get; }
+
+        /// <summary>
+        /// Command to remove the selected relationship tab from the configuration.
+        /// </summary>
         public ICommand RemoveRelationshipCommand { get; }
+
+        /// <summary>
+        /// Command to publish the current configuration to Dataverse as plugin steps.
+        /// </summary>
         public ICommand PublishCommand { get; }
+
+        /// <summary>
+        /// Command to clear the current session and reset all configuration state.
+        /// </summary>
         public ICommand ClearSessionCommand { get; }
 
         #endregion
 
         #region Constructor & Initialization
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ConfigurationViewModel"/> class.
+        /// </summary>
+        /// <param name="metadataService">Service for retrieving Dataverse metadata.</param>
+        /// <param name="configurationService">Service for publishing and managing configurations.</param>
+        /// <param name="settingsRepository">Repository for persisting session state.</param>
+        /// <param name="log">Optional logging action for diagnostic messages.</param>
+        /// <exception cref="ArgumentNullException">Thrown when any required service is null.</exception>
         public ConfigurationViewModel(
             IMetadataService metadataService,
             IConfigurationService configurationService,
@@ -308,8 +344,10 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Initializes the ViewModel after connection
+        /// Initializes the ViewModel after establishing a connection to Dataverse.
+        /// Attempts to restore the previous session if available, otherwise loads solutions.
         /// </summary>
+        /// <param name="connectionId">The unique identifier for the current Dataverse connection.</param>
         public async Task InitializeAsync(string connectionId)
         {
             ConnectionId = connectionId;
@@ -340,8 +378,10 @@ namespace CascadeFields.Configurator.ViewModels
         #region Session Management
 
         /// <summary>
-        /// Restores configuration from saved session
+        /// Restores the application state from a previously saved session.
+        /// Reloads the solution, parent entity, and configuration JSON to return the user to their previous state.
         /// </summary>
+        /// <param name="session">The session state to restore.</param>
         private async Task RestoreSessionAsync(SessionState session)
         {
             try
@@ -389,7 +429,8 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Saves current state to session
+        /// Saves the current configuration state to persistent storage for later restoration.
+        /// Includes solution, parent entity, and complete configuration JSON.
         /// </summary>
         public async Task SaveSessionAsync()
         {
@@ -409,7 +450,8 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Clears the saved session
+        /// Clears the saved session and resets all configuration state to defaults.
+        /// Removes all relationship tabs and clears the parent entity selection.
         /// </summary>
         private void ClearSession()
         {
@@ -487,7 +529,8 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Handles solution selection change
+        /// Handles solution selection changes by loading all entities in the selected solution.
+        /// Reports progress during the load operation and updates the UI accordingly.
         /// </summary>
         private async Task OnSolutionChangedAsync()
         {
@@ -568,7 +611,8 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Handles parent entity selection change
+        /// Handles parent entity selection changes by clearing current relationships
+        /// and loading any existing configuration for the newly selected entity.
         /// </summary>
         private async Task OnParentEntityChangedAsync()
         {
@@ -615,8 +659,11 @@ namespace CascadeFields.Configurator.ViewModels
         #region Configuration Management
 
         /// <summary>
-        /// Applies a configuration from JSON
+        /// Applies a cascade configuration from JSON by parsing it and creating the appropriate relationship tabs.
+        /// Validates that the parent entity exists and attempts to match relationships using multiple strategies.
         /// </summary>
+        /// <param name="json">The JSON configuration string to apply.</param>
+        /// <param name="markAsPublished">If true, marks the configuration as published (no unsaved changes).</param>
         public async Task ApplyConfigurationAsync(string? json, bool markAsPublished = false)
         {
             if (string.IsNullOrWhiteSpace(json))
@@ -782,8 +829,10 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Adds a new relationship tab
+        /// Adds a new child relationship to the configuration by presenting available relationships to the user.
+        /// Filters out relationships that are already configured and prevents duplicate tabs.
         /// </summary>
+        /// <param name="parameter">Command parameter (unused).</param>
         private async Task AddRelationshipAsync(object? parameter)
         {
             if (SelectedParentEntity == null)
@@ -872,8 +921,10 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Removes the selected relationship tab
+        /// Removes the selected relationship tab from the configuration.
+        /// If the relationship was previously published, prompts for confirmation before removal.
         /// </summary>
+        /// <param name="parameter">Command parameter (unused).</param>
         private void RemoveRelationship(object? parameter)
         {
             if (SelectedTab == null)
@@ -905,8 +956,11 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Publishes the configuration to a plugin step
+        /// Publishes the current configuration to Dataverse by creating or updating plugin steps.
+        /// Validates the configuration, checks plugin status, adds required components to the solution,
+        /// and removes any relationships that were deleted since the last publish.
         /// </summary>
+        /// <param name="parameter">Command parameter (unused).</param>
         private async Task PublishAsync(object? parameter)
         {
             if (!IsConfigurationValid)
@@ -1088,7 +1142,8 @@ namespace CascadeFields.Configurator.ViewModels
         #region JSON Generation
 
         /// <summary>
-        /// Updates the JSON preview from current state
+        /// Updates the JSON configuration preview by building a configuration model from the current ViewModel state.
+        /// Called automatically whenever any configuration property changes.
         /// </summary>
         private void UpdateJsonPreview()
         {
@@ -1106,8 +1161,10 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Hooks change events on a relationship tab so JSON stays in sync
+        /// Subscribes to property and collection change events on a relationship tab
+        /// to keep the JSON configuration synchronized with the UI state.
         /// </summary>
+        /// <param name="tab">The relationship tab to monitor for changes.</param>
         private void HookTabEvents(RelationshipTabViewModel tab)
         {
             tab.PropertyChanged += TabPropertyChanged;
@@ -1128,8 +1185,10 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Unhooks change events from a relationship tab
+        /// Unsubscribes from change events on a relationship tab when it's removed from the configuration.
+        /// Prevents memory leaks and ensures clean tab removal.
         /// </summary>
+        /// <param name="tab">The relationship tab to stop monitoring.</param>
         private void UnhookTabEvents(RelationshipTabViewModel tab)
         {
             tab.PropertyChanged -= TabPropertyChanged;
@@ -1146,6 +1205,10 @@ namespace CascadeFields.Configurator.ViewModels
             }
         }
 
+        /// <summary>
+        /// Handles collection change events for field mappings and filter criteria within relationship tabs.
+        /// Automatically hooks/unhooks property change events for collection items.
+        /// </summary>
         private void TabChildCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
         {
             // Hook property change events for new items
@@ -1176,12 +1239,20 @@ namespace CascadeFields.Configurator.ViewModels
             ScheduleSave();
         }
 
+        /// <summary>
+        /// Handles property changes on field mappings and filter criteria items.
+        /// Updates JSON and schedules a session save.
+        /// </summary>
         private void TabChildItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             UpdateJsonPreview();
             ScheduleSave();
         }
 
+        /// <summary>
+        /// Handles property changes on relationship tabs.
+        /// Only responds to configuration-critical properties to avoid unnecessary updates.
+        /// </summary>
         private void TabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             // Only respond to tab-level configuration changes
@@ -1197,8 +1268,11 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Builds a configuration model from the current ViewModel state
+        /// Builds a complete cascade configuration model from the current ViewModel state.
+        /// Includes all relationship tabs and their field mappings and filter criteria.
         /// </summary>
+        /// <returns>A serializable configuration model ready for JSON export or publishing.</returns>
+        /// <exception cref="InvalidOperationException">Thrown when no parent entity is selected.</exception>
         private CascadeConfigurationModel BuildConfigurationModel()
         {
             if (SelectedParentEntity == null)
@@ -1218,6 +1292,12 @@ namespace CascadeFields.Configurator.ViewModels
             };
         }
 
+        /// <summary>
+        /// Compares the current configuration against the last published configuration
+        /// to identify relationships that need to be removed from Dataverse.
+        /// </summary>
+        /// <param name="currentConfig">The current configuration being published.</param>
+        /// <returns>List of relationships that were previously published but are no longer in the current configuration.</returns>
         private List<RelatedEntityConfigModel> GetRemovedPublishedRelationships(CascadeConfigurationModel currentConfig)
         {
             var removed = new List<RelatedEntityConfigModel>();
@@ -1239,6 +1319,12 @@ namespace CascadeFields.Configurator.ViewModels
             return removed;
         }
 
+        /// <summary>
+        /// Builds a unique key for a relationship configuration to enable comparison and deduplication.
+        /// The key combines entity name, relationship name, and lookup field.
+        /// </summary>
+        /// <param name="related">The related entity configuration.</param>
+        /// <returns>A lowercase string key in the format "entityName|relationshipName|lookupField".</returns>
         private static string BuildRelationshipKey(RelatedEntityConfigModel related)
         {
             var relationship = related.RelationshipName ?? string.Empty;
@@ -1246,6 +1332,19 @@ namespace CascadeFields.Configurator.ViewModels
             return $"{related.EntityName}|{relationship}|{lookup}".ToLowerInvariant();
         }
 
+        /// <summary>
+        /// Validates a cascade configuration JSON against the Dataverse environment and solution.
+        /// Checks entity existence, relationship validity, field availability, and solution membership.
+        /// </summary>
+        /// <param name="json">The JSON configuration to validate.</param>
+        /// <param name="currentSolutionUniqueName">The solution unique name to check for missing components.</param>
+        /// <returns>
+        /// A tuple containing:
+        /// - isValid: Whether the configuration is valid for publishing
+        /// - errors: Critical validation errors that prevent publishing
+        /// - warnings: Non-critical issues (e.g., components not in solution)
+        /// - missingComponents: Solution components that need to be added (entity, relationship, field metadata)
+        /// </returns>
         public async Task<(bool isValid, List<string> errors, List<string> warnings, List<(int componentType, Guid componentId, string description)> missingComponents)> ValidateConfigurationJsonAsync(string json, string? currentSolutionUniqueName)
         {
             var errors = new List<string>();
@@ -1424,6 +1523,10 @@ namespace CascadeFields.Configurator.ViewModels
             return (!errors.Any(), errors, warnings, missingComponents);
         }
 
+        /// <summary>
+        /// Logs a diagnostic message to both the registered log action and Debug output.
+        /// </summary>
+        /// <param name="message">The message to log.</param>
         private void Log(string message)
         {
             _log?.Invoke(message);
@@ -1431,8 +1534,13 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Attempts to resolve a relationship when the configuration is missing relationshipName
+        /// Attempts to resolve a relationship using multiple fallback strategies when the configuration
+        /// is incomplete or uses older formats that don't include the full relationship schema name.
+        /// Strategy: 1) Match by schema name, 2) Match by child entity + lookup field, 3) Use single candidate.
         /// </summary>
+        /// <param name="relatedEntity">The related entity configuration to resolve.</param>
+        /// <param name="relationships">Available relationships to search.</param>
+        /// <returns>The matched relationship, or null if no match could be determined.</returns>
         private static RelationshipItem? ResolveRelationship(RelatedEntityConfigModel relatedEntity, IReadOnlyList<RelationshipItem> relationships)
         {
             if (relatedEntity == null || relationships == null)
@@ -1477,7 +1585,8 @@ namespace CascadeFields.Configurator.ViewModels
         private System.Timers.Timer? _saveTimer;
 
         /// <summary>
-        /// Schedules a save with debouncing (2 seconds)
+        /// Schedules a debounced save operation to prevent excessive writes during rapid UI changes.
+        /// Delays the actual save for 2 seconds and resets the timer on each call.
         /// </summary>
         private void ScheduleSave()
         {

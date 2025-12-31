@@ -23,13 +23,25 @@ namespace CascadeFields.Configurator
     [ExportMetadata("SecondaryFontColor", "#000000")]
     public class CascadeFieldsConfiguratorPlugin : PluginBase, IHelpPlugin, IAboutPlugin
     {
+        /// <summary>
+        /// Static constructor that registers the custom assembly resolver for dependent DLLs.
+        /// </summary>
         static CascadeFieldsConfiguratorPlugin()
         {
             AssemblyResolver.Register();
         }
 
+        /// <summary>
+        /// Gets the help URL for the CascadeFields Configurator.
+        /// </summary>
         public string HelpUrl => "https://github.com/mscottsewell/CascadeFields";
 
+        /// <summary>
+        /// Creates and returns the main configurator control instance.
+        /// Implements comprehensive error logging on failure to aid in troubleshooting.
+        /// </summary>
+        /// <returns>The configurator control instance.</returns>
+        /// <exception cref="Exception">Rethrows exceptions after logging for XrmToolBox to handle.</exception>
         public override IXrmToolBoxPluginControl GetControl()
         {
             try
@@ -78,6 +90,9 @@ namespace CascadeFields.Configurator
             }
         }
 
+        /// <summary>
+        /// Displays an About dialog with plugin information.
+        /// </summary>
         public void ShowAboutDialog()
         {
             var message = "CascadeFields Configurator\nConfigure mappings, publish plugin steps, and update the CascadeFields plugin assembly.";

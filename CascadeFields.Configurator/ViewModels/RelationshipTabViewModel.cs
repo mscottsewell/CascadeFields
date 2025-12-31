@@ -61,6 +61,10 @@ namespace CascadeFields.Configurator.ViewModels
             }
         }
 
+        /// <summary>
+        /// Gets or sets whether to use the relationship schema name for configuration.
+        /// When true, uses the relationship metadata; when false, uses only the lookup field name.
+        /// </summary>
         public bool UseRelationship
         {
             get => _useRelationship;
@@ -78,6 +82,10 @@ namespace CascadeFields.Configurator.ViewModels
             }
         }
 
+        /// <summary>
+        /// Gets or sets the lookup field name on the child entity that references the parent.
+        /// Required when UseRelationship is false, optional when true.
+        /// </summary>
         public string LookupFieldName
         {
             get => _lookupFieldName;
@@ -113,6 +121,13 @@ namespace CascadeFields.Configurator.ViewModels
         /// </summary>
         public ObservableCollection<FilterCriterionViewModel> FilterCriteria { get; }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RelationshipTabViewModel"/> class.
+        /// </summary>
+        /// <param name="metadataService">Service for retrieving entity and attribute metadata.</param>
+        /// <param name="parentEntityLogicalName">Logical name of the parent entity.</param>
+        /// <param name="childEntityLogicalName">Logical name of the child entity.</param>
+        /// <exception cref="ArgumentNullException">Thrown when any parameter is null.</exception>
         public RelationshipTabViewModel(
             IMetadataService metadataService,
             string parentEntityLogicalName,
@@ -151,7 +166,8 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Loads parent/child attribute metadata for drop-downs used by mapping and filter grids.
+        /// Loads parent and child entity attribute metadata for use in field mapping and filter drop-downs.
+        /// Parent attributes include read-only and logical fields; child attributes exclude read-only.
         /// </summary>
         public async Task InitializeAsync()
         {
@@ -190,8 +206,10 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Converts this tab into the domain model used by plugin publishing.
+        /// Converts this ViewModel to a domain model suitable for JSON serialization and plugin publishing.
+        /// Includes relationship configuration, field mappings, and filter criteria.
         /// </summary>
+        /// <returns>A <see cref="RelatedEntityConfigModel"/> containing all configuration data.</returns>
         public RelatedEntityConfigModel ToRelatedEntityConfig()
         {
             var lookupFieldName = SelectedRelationship?.ReferencingAttribute;
@@ -228,8 +246,10 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Builds the serialized filter criteria string expected by the plugin (field|op|value blocks).
+        /// Builds a semicolon-delimited filter criteria string for the plugin.
+        /// Format: "field|operator|value;field|operator|value"
         /// </summary>
+        /// <returns>A serialized filter string, or empty string if no valid filters exist.</returns>
         private string BuildFilterString()
         {
             var validFilters = FilterCriteria
@@ -240,7 +260,8 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Builds a multi-line tab title with child display name, lookup field, and schema name.
+        /// Updates the tab display name based on the current relationship configuration.
+        /// Creates a multi-line title showing entity name, lookup field, and relationship schema.
         /// </summary>
         private void UpdateTabName()
         {
@@ -271,8 +292,11 @@ namespace CascadeFields.Configurator.ViewModels
         }
 
         /// <summary>
-        /// Populates mappings/filters from a previously saved domain model configuration.
+        /// Populates this tab's field mappings and filter criteria from a previously saved configuration.
+        /// Clears existing data and reconstructs the ViewModels from the domain model.
         /// </summary>
+        /// <param name="model">The related entity configuration to load.</param>
+        /// <exception cref="ArgumentNullException">Thrown when model is null.</exception>
         public void LoadFromModel(RelatedEntityConfigModel model)
         {
             if (model == null)

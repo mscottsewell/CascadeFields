@@ -15,15 +15,29 @@ using PluginCascadeConfiguration = CascadeFields.Plugin.Models.CascadeConfigurat
 
 namespace CascadeFields.Configurator.Services
 {
+    /// <summary>
+    /// Provides operations for managing CascadeFields configurations in Dataverse.
+    /// Handles plugin registration, step creation/update, and configuration publishing.
+    /// </summary>
     public class ConfigurationService : IConfigurationService
     {
         private readonly IOrganizationService _service;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ConfigurationService"/> class.
+        /// </summary>
+        /// <param name="service">The Dataverse organization service.</param>
+        /// <exception cref="ArgumentNullException">Thrown when service is null.</exception>
         public ConfigurationService(IOrganizationService service)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
         }
 
+        /// <summary>
+        /// Retrieves all existing CascadeFields configurations by querying plugin steps.
+        /// Parses configuration JSON and resolves metadata for display names.
+        /// </summary>
+        /// <returns>A list of configured relationships with metadata and JSON.</returns>
         public Task<List<ConfiguredRelationship>> GetExistingConfigurationsAsync()
         {
             return Task.Run(() =>
@@ -124,6 +138,11 @@ namespace CascadeFields.Configurator.Services
             });
         }
 
+        /// <summary>
+        /// Retrieves the raw JSON configuration for a specific parent entity, if one exists.
+        /// </summary>
+        /// <param name="parentEntityLogicalName">The logical name of the parent entity.</param>
+        /// <returns>The JSON configuration string, or null if no configuration exists.</returns>
         public Task<string?> GetConfigurationForParentEntityAsync(string parentEntityLogicalName)
         {
             return Task.Run(async () =>
@@ -135,6 +154,13 @@ namespace CascadeFields.Configurator.Services
             });
         }
 
+        /// <summary>
+        /// Deletes plugin steps for relationships that have been removed from the configuration.
+        /// Removes both create and relink steps for each specified relationship.
+        /// </summary>
+        /// <param name="parentEntityLogicalName">The parent entity logical name.</param>
+        /// <param name="relationships">The relationships to delete from Dataverse.</param>
+        /// <param name="progress">Progress reporter for status updates.</param>
         public Task DeleteRelationshipStepsAsync(string parentEntityLogicalName, IEnumerable<RelatedEntityConfigModel> relationships, IProgress<string> progress)
         {
             return Task.Run(() =>
@@ -163,6 +189,16 @@ namespace CascadeFields.Configurator.Services
             });
         }
 
+        /// <summary>
+        /// Publishes a cascade configuration to Dataverse by creating or updating plugin steps.
+        /// Creates parent update step, pre-images, and child create/update steps as needed.
+        /// </summary>
+        /// <param name="configuration">The configuration to publish.</param>
+        /// <param name="progress">Progress reporter for status updates.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="solutionId">Optional solution ID to add components to.</param>
+        /// <exception cref="ArgumentNullException">Thrown when configuration is null.</exception>
+        /// <exception cref="InvalidPluginExecutionException">Thrown when plugin type is not found.</exception>
         public Task PublishConfigurationAsync(CascadeConfigurationModel configuration, IProgress<string> progress, CancellationToken cancellationToken, Guid? solutionId = null)
         {
             return Task.Run(() =>
@@ -244,6 +280,15 @@ namespace CascadeFields.Configurator.Services
             }, cancellationToken);
         }
 
+        /// <summary>
+        /// Registers or updates the CascadeFields plugin assembly and type in Dataverse.
+        /// Reads the assembly file, creates or updates the pluginassembly and plugintype records.
+        /// </summary>
+        /// <param name="assemblyPath">Path to the CascadeFields.Plugin.dll file.</param>
+        /// <param name="progress">Progress reporter for status updates.</param>
+        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="solutionId">Optional solution ID to add the assembly to.</param>
+        /// <exception cref="InvalidPluginExecutionException">Thrown when assembly file is not found.</exception>
         public Task UpdatePluginAssemblyAsync(string assemblyPath, IProgress<string> progress, CancellationToken cancellationToken, Guid? solutionId = null)
         {
             return Task.Run(() =>
