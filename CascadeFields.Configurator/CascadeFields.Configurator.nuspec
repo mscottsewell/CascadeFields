@@ -11,15 +11,16 @@
     <projectUrl>https://github.com/mscottsewell/CascadeFields</projectUrl>
     <readme>README.md</readme>
     <icon>icon.png</icon>
+    <releaseNotes>Review CHANGELOG or git history for details.</releaseNotes>
     <description>XrmToolBox utility to configure and deploy the CascadeFields plugin for Dataverse.</description>
     <tags>XrmToolBox Dataverse Dynamics CRM Plugin CascadeFields</tags>
+    <dependencies>
+      <dependency id="XrmToolBoxPackage" version="[1.2025.10.74,)" />
+    </dependencies>
   </metadata>
   <files>
-    <file src="bin\Release\net462\CascadeFields.Configurator.dll" target="tools" />
-    <file src="bin\Release\net462\CascadeFields.Configurator.pdb" target="tools" />
-    <file src="Assets\DataversePlugin\CascadeFields.Plugin.dll" target="tools\Assets\DataversePlugin" />
-    <file src="Assets\DataversePlugin\CascadeFields.Plugin.pdb" target="tools\Assets\DataversePlugin" />
-    <file src="Assets\**\*.*" target="tools\Assets" exclude="Assets\DataversePlugin\CascadeFields.Plugin.dll;Assets\DataversePlugin\CascadeFields.Plugin.pdb" />
+    <file src="bin\Release\net462\CascadeFields.Configurator.dll" target="lib\net452\Plugins" />
+    <file src="Assets\**\*.*" target="lib\net452\Plugins\CascadeFields\Assets" exclude="Assets\DataversePlugin\CascadeFields.Plugin.dll;Assets\DataversePlugin\CascadeFields.Plugin.pdb" />
     <file src="Assets\Icon\CascadeFieldsConfigurator_80.png" target="icon.png" />
     <file src="..\README.md" target="README.md" />
     <file src="..\LICENSE" target="LICENSE" />
