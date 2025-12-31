@@ -358,7 +358,7 @@ To contribute:
 
 Licensed under the [MIT License](LICENSE). Free for commercial and personal use.
 
-Copyright © 2025 mscottsewell
+Copyright © 2026 Scott Sewell
 
 ## Version History
 
