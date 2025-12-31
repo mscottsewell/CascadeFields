@@ -4,8 +4,8 @@
     <id>CascadeFields.Configurator</id>
     <version>$version$</version>
     <title>CascadeFields Configurator</title>
-    <authors>M Scott Sewell</authors>
-    <owners>M Scott Sewell</owners>
+    <authors>Scott Sewell</authors>
+    <owners>Scott Sewell</owners>
     <license type="expression">MIT</license>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <projectUrl>https://github.com/mscottsewell/CascadeFields</projectUrl>
