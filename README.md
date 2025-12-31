@@ -15,7 +15,8 @@ A powerful, no-code solution for Microsoft Dataverse (Dynamics 365) that automat
 
 No manual plugin registration, no JSON editing, no deployment hassles. The Configurator handles everything for you.
 
-<img width="1400" height="789" alt="image" src="https://github.com/user-attachments/assets/e8b94d15-ed91-4427-9f6f-d05636e2675e" />
+<img width="1400" height="789" alt="image" src="https://github.com/user-attachments/assets/957b0391-5e44-4189-8fa2-d37ce081a1b8" />
+
 
 ## Why CascadeFields?
 
