@@ -87,7 +87,7 @@ The toolbar ribbon at the top of the Configurator contains the following buttons
 | --- | --- |
 | **Retrieve Configured Entity** | Load an existing configuration from Dataverse. If only one parent entity is configured, it loads automatically. If multiple are configured, a selection dialog appears. |
 | **Export JSON** | Save the current configuration to a JSON file for backup, sharing, or version control. |
-| **Import JSON** | Load a configuration from a JSON file. Useful for restoring backups or sharing configurations between environments. |
+| **Import JSON** | Load a configuration from a JSON file. Useful for restoring backups during configuration testing. |
 | **Add Relationship** | Add a new child entity relationship to the current parent entity configuration. Opens a dialog to select the child entity and lookup field. |
 | **Remove Relationship** | Remove the currently selected child entity relationship tab from the configuration. |
 | **Publish Configuration and Plug-in** | Validate and publish the configuration to Dataverse. Creates or updates the plugin assembly and all plugin steps. |
