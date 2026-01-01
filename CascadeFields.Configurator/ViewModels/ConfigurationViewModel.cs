@@ -1261,6 +1261,8 @@ namespace CascadeFields.Configurator.ViewModels
         private void TabChildItemPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
             UpdateJsonPreview();
+            OnPropertyChanged(nameof(IsConfigurationValid));
+            OnPropertyChanged(nameof(CanPublish));
             ScheduleSave();
         }
 

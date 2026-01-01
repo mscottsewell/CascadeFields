@@ -145,8 +145,31 @@ namespace CascadeFields.Configurator.ViewModels
             TabName = childEntityLogicalName;
 
             // Subscribe to collection changes to raise property changed
-            FieldMappings.CollectionChanged += (s, e) => OnPropertyChanged(nameof(FieldMappings));
-            FilterCriteria.CollectionChanged += (s, e) => OnPropertyChanged(nameof(FilterCriteria));
+            FieldMappings.CollectionChanged += (s, e) =>
+            {
+                // Subscribe to PropertyChanged on new items
+                if (e.NewItems != null)
+                {
+                    foreach (FieldMappingViewModel item in e.NewItems)
+                    {
+                        item.PropertyChanged += (sender, args) => OnPropertyChanged(nameof(FieldMappings));
+                    }
+                }
+                OnPropertyChanged(nameof(FieldMappings));
+            };
+
+            FilterCriteria.CollectionChanged += (s, e) =>
+            {
+                // Subscribe to PropertyChanged on new items
+                if (e.NewItems != null)
+                {
+                    foreach (FilterCriterionViewModel item in e.NewItems)
+                    {
+                        item.PropertyChanged += (sender, args) => OnPropertyChanged(nameof(FilterCriteria));
+                    }
+                }
+                OnPropertyChanged(nameof(FilterCriteria));
+            };
 
             // Add initial empty rows
             FieldMappings.Add(new FieldMappingViewModel());
