@@ -216,6 +216,7 @@ namespace CascadeFields.Configurator.Controls
             _grid.CellValueChanged += Grid_CellValueChanged;
             _grid.CurrentCellDirtyStateChanged += Grid_CurrentCellDirtyStateChanged;
             _grid.EditingControlShowing += Grid_EditingControlShowing;
+            _grid.CellEnter += Grid_CellEnter;
             _grid.UserDeletedRow += Grid_UserDeletedRow;
             _grid.KeyDown += Grid_KeyDown;
             _grid.DataError += (s, e) => { e.ThrowException = false; };
@@ -419,6 +420,46 @@ namespace CascadeFields.Configurator.Controls
             }
 
             e.DrawFocusRectangle();
+        }
+
+        /// <summary>
+        /// Auto-selects the first item when entering an empty combo box cell.
+        /// This improves UX by making the visually displayed first item actually selected.
+        /// </summary>
+        private void Grid_CellEnter(object? sender, DataGridViewCellEventArgs e)
+        {
+            if (_grid == null)
+                return;
+
+            // Only handle combo box columns
+            var columnName = _grid.Columns[e.ColumnIndex]?.Name;
+            if (columnName != "SourceField" && columnName != "TargetField")
+                return;
+
+            // Check if cell is empty
+            var currentValue = _grid[e.ColumnIndex, e.RowIndex]?.Value;
+            if (currentValue != null && !string.IsNullOrEmpty(currentValue.ToString()))
+                return;
+
+            // Get the combo box column
+            var comboColumn = _grid.Columns[e.ColumnIndex] as DataGridViewComboBoxColumn;
+            if (comboColumn?.DataSource == null)
+                return;
+
+            // Auto-select the first item if available
+            var items = comboColumn.DataSource as System.Collections.Generic.List<AttributeItem>;
+            if (items != null && items.Count > 0)
+            {
+                var firstItem = items[0];
+                _grid[e.ColumnIndex, e.RowIndex].Value = firstItem.LogicalName;
+
+                // Commit the value immediately
+                if (_grid.CurrentCell != null && _grid.CurrentCell.ColumnIndex == e.ColumnIndex &&
+                    _grid.CurrentCell.RowIndex == e.RowIndex)
+                {
+                    _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+                }
+            }
         }
 
         /// <summary>
