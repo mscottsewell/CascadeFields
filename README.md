@@ -25,7 +25,7 @@ CascadeFields provides an **XrmToolBox** interface to configure a Dataverse plug
 6. Select a **Parent Entity** - the tool will automatically prompt you to add a child relationship if none are configured
 7. Configure your fields to cascade using the visual interface
 8. Add filters and trigger fields as needed
-9. Click **Publish** - done!
+9. Click **Publish Configuration and Plug-in** - done!
 
 No manual plugin registration, no JSON editing, no deployment hassles. The Configurator handles everything for you.
 
@@ -62,7 +62,6 @@ CascadeFields provides a **visual, no-code** interface to:
 - ✅ Avoid infinite loops with automatic depth protection
 - ✅ Keep everything solution-aware for easy deployment and versioning
 - ✅ Save time and resources compared to custom development
-- 
 
 ### Perfect For
 
@@ -241,27 +240,39 @@ The visual interface guides you through configuration:
 1. **Select Solution** - Choose the unmanaged solution containing the parent and child entities you're configuring.  
 Note: The plugin assembly and related step components will be added to this solution upon publishing.
 2. **Choose Parent Entity** - Pick the entity to monitor for changes. The tool automatically loads any existing configuration for that entity. If no child relationships are configured, you'll be prompted to add one immediately.
-3. **Add Relationships** - Select which child entities to cascade to. The list is filtered to entities in the solution with a many-to-one relationship to the parent.
+3. **Add Relationships** - Click **Add Relationship** in the ribbon to select which child entities to cascade to. The list is filtered to entities in the solution with a many-to-one relationship to the parent.
 4. **Map Fields** - Select the parent fields you want copied to child fields
 5. **Set Filters** - Optionally filter which children receive updates.  
 Note: Use criteria like 'statecode = 0' (Status = Active) to limit updates to only active records.
 6. **Mark Triggers** - Specify which parent field changes trigger cascades
-7. **Publish** - One click deploys everything
+7. **Publish Configuration and Plug-in** - One click deploys everything
 
 ### User Interface Overview
 
 The Configurator is divided into two main panes:
 
-**Left Pane - Configuration & Logging:**
+**Ribbon Buttons:**
 
+The toolbar ribbon at the top contains the following buttons:
+
+| Button | Purpose |
+| --- | --- |
+| **Retrieve Configured Entity** | Load an existing configuration from Dataverse. Auto-loads if only one parent is configured; shows picker for multiple. |
+| **Export JSON** | Save the current configuration to a JSON file for backup, sharing, or version control. |
+| **Import JSON** | Load a configuration from a JSON file. Useful for restoring backups or sharing between environments. |
+| **Add Relationship** | Add a new child entity relationship to the current parent configuration. |
+| **Remove Relationship** | Remove the currently selected child entity relationship tab. |
+| **Publish Configuration and Plug-in** | Validate and publish the configuration. Creates or updates the plugin assembly and all plugin steps. |
+
+**Left Pane - Configuration & Logging:**
 
 The left pane contains three tabs:
 
-| Tab              | Description                                                                                                 |
-|------------------|-------------------------------------------------------------------------------------------------------------|
-| **Configuration**| Main configuration controls: select Solution, select Parent Entity, and manage configuration checkboxes.     |
-| **Log**          | Real-time activity log showing operations, metadata loading, and status messages. Useful for troubleshooting. |
-| **JSON Preview** | Live preview of the generated JSON configuration. Updates automatically as you make changes.                 |
+| Tab | Description |
+| --- | --- |
+| **Configuration** | Main configuration controls: select Solution, select Parent Entity, and manage configuration checkboxes. |
+| **Log** | Real-time activity log showing operations, metadata loading, and status messages. Useful for troubleshooting. |
+| **JSON Preview** | Live preview of the generated JSON configuration. Updates automatically as you make changes. |
 
 **Configuration Tab Controls:**
 
@@ -270,11 +281,11 @@ The left pane contains three tabs:
 
 Below these controls are three important checkboxes:
 
-| Checkbox                  | Description                                                                                                    | Recommendation                                                                                   |
-|---------------------------|----------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
-| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution.                                         | ✅ Enable during development and testing. ⚠️ **Disable in production** to reduce log volume and improve performance. |
-| **Is Active**               | When checked, the configuration is active and the plugin will process cascades.                                | Uncheck to temporarily disable cascading without removing the configuration.                      |
-| **Show Advanced/JSON**      | When checked, displays advanced options and the raw JSON configuration for expert users and troubleshooting.   | Leave unchecked unless you need to review or edit the raw configuration directly.                 |
+| Checkbox | Description | Recommendation |
+| --- | --- | --- |
+| **Is Active** | When checked, the configuration is active and the plugin will process cascades. | Uncheck to temporarily disable cascading without removing the configuration. |
+| **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent clutter. Only applies to parent step since child steps run synchronously. | Leave checked to keep System Jobs clean. Uncheck to monitor successful jobs. |
+| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. | ✅ Enable during development and testing. ⚠️ **Disable in production** to reduce log volume and improve performance. |
 
 **Right Pane - Relationship Configuration:**
 
@@ -285,7 +296,7 @@ The right pane displays tabs for each configured child relationship. Each tab co
 
 ### Retrieve Configured Entity
 
-Click **Retrieve Configured Entity** in the toolbar to load an existing configuration:
+Click **Retrieve Configured Entity** in the ribbon to load an existing configuration:
 
 - If **only one parent entity** has a configuration, it loads automatically without prompting
 - If **multiple parent entities** are configured, a selection dialog appears showing all configured parents with their child relationships

@@ -44,7 +44,7 @@ Get up and running with CascadeFields in minutes using the XrmToolBox Configurat
 
 ### 3. Publish Configuration
 
-1. Click **Publish Configuration** in the ribbon
+1. Click **Publish Configuration and Plug-in** in the ribbon
 2. The selected solution will be updated to include:
    - Plugin assembly (CascadeFields.Plugin)
    - Plugin steps (parent and child steps)
@@ -58,24 +58,41 @@ Get up and running with CascadeFields in minutes using the XrmToolBox Configurat
 
 ## Understanding the User Interface
 
-### Left Pane Tabs
+### Ribbon Buttons
 
-The left pane contains three tabs:
+The toolbar ribbon at the top of the Configurator contains the following buttons (left to right):
 
-| Tab | Purpose |
+| Button | Purpose |
 | --- | --- |
-| **Configuration** | Select your Solution and Parent Entity from dropdown menus. |
-| **Log** | View real-time activity log showing operations, metadata loading progress, and status messages. Helpful for troubleshooting. |
-| **JSON Preview** | See the live JSON configuration that will be published. Updates automatically as you make changes. |
+| **Retrieve Configured Entity** | Load an existing configuration from Dataverse. If only one parent entity is configured, it loads automatically. If multiple are configured, a selection dialog appears. |
+| **Export JSON** | Save the current configuration to a JSON file for backup, sharing, or version control. |
+| **Import JSON** | Load a configuration from a JSON file. Useful for restoring backups or sharing configurations between environments. |
+| **Add Relationship** | Add a new child entity relationship to the current parent entity configuration. Opens a dialog to select the child entity and lookup field. |
+| **Remove Relationship** | Remove the currently selected child entity relationship tab from the configuration. |
+| **Publish Configuration and Plug-in** | Validate and publish the configuration to Dataverse. Creates or updates the plugin assembly and all plugin steps. |
 
-### Left Pane Checkboxes
+### Left Pane: Tabs and Controls
 
-Below the tabs are two important checkboxes:
+The left pane is organized into three tabs:
+
+| Tab | Contents & Purpose |
+| --- | --- |
+| **Configuration** | Main configuration controls: Solution selector, Parent Entity selector, and configuration checkboxes. |
+| **Log** | Real-time activity log showing operations, metadata loading progress, and status messages for troubleshooting. |
+| **JSON Preview** | Live preview of the generated JSON configuration. Updates automatically as you make changes. |
+
+**Configuration Tab Controls:**
+
+- **Solution Selector:** Dropdown to choose the unmanaged solution where plugin components will be added.
+- **Parent Entity Selector:** Dropdown to select the parent entity to configure. Filters to entities in the selected solution.
+
+Below these controls are three important checkboxes:
 
 | Checkbox | What it does | When to use |
 | --- | --- | --- |
-| **Enable Detailed Tracing** | Writes verbose trace logs for every plugin execution to the Plugin Trace Log. | ✅ **Enable** during development and testing to debug issues. ⚠️ **Disable** in production to reduce log volume and improve performance. |
 | **Is Active** | Controls whether the plugin processes cascades for this configuration. | Leave checked for normal operation. Uncheck to temporarily pause cascading without removing the configuration. |
+| **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent clutter. Only applies to the parent update step since child steps run synchronously. | Leave checked to keep System Jobs clean. Uncheck if you want to monitor successful jobs. |
+| **Enable Detailed Tracing** | Writes verbose trace logs for every plugin execution to the Plugin Trace Log. | ✅ Enable during development and testing. ⚠️ Disable in production to reduce log volume and improve performance. |
 
 ### Right Pane
 
@@ -142,9 +159,10 @@ Plugin trace logs are your best tool for debugging and understanding what Cascad
 
 For more detailed logs during testing:
 
-1. Edit your configuration in the Configurator
-2. Set logging level to verbose (if available)
-3. **⚠️ Important:** Do not leave detailed tracing enabled in production environments as it impacts performance and creates excessive log records
+1. Open your configuration in the Configurator
+2. Check the **Enable Detailed Tracing** checkbox in the Configuration tab
+3. Click **Publish Configuration and Plug-in** to apply the change
+4. **⚠️ Important:** Do not leave detailed tracing enabled in production environments as it impacts performance and creates excessive log records
 
 **Check System Jobs (for parent updates):**
 
@@ -166,15 +184,15 @@ Since parent updates run asynchronously:
 1. Open **CascadeFields Configurator** in XrmToolBox
 2. Connect to your environment
 3. Load the configuration for the parent entity
-4. Select the related entity you want to remove
-5. Click **Remove Related Entity** or modify field mappings as needed
-6. Click **Publish Configuration** to update
+4. Select the child relationship tab you want to remove
+5. Click **Remove Relationship** in the ribbon, or modify field mappings as needed
+6. Click **Publish Configuration and Plug-in** to update
 
 #### Uninstalling Completely
 
 To remove the plugin assembly and all associated steps:
 
-**Option 1: Using Power Apps Maker Portal**
+#### Option 1: Using Power Apps Maker Portal
 
 1. Navigate to [make.powerapps.com](https://make.powerapps.com)
 2. Select your environment
@@ -182,7 +200,7 @@ To remove the plugin assembly and all associated steps:
 4. Find **Plugin Assemblies** → select **CascadeFields.Plugin**
 5. Click **Remove** → **Delete** (this will also remove all associated steps)
 
-**Option 2: Using Plugin Registration Tool**
+#### Option 2: Using Plugin Registration Tool
 
 1. Open the **Plugin Registration Tool**
 2. Connect to your environment
