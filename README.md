@@ -1,6 +1,14 @@
 # CascadeFields for Microsoft Dataverse
 
+<img width="180" height="180" alt="CascadeFieldsConfigurator" src="https://github.com/user-attachments/assets/c6fcb5fa-de3e-41c1-b4a4-fb2d8863097e" align="left" style="margin-right: 10px;" />
+
+
 A powerful, no-code solution for Microsoft Dataverse (Dynamics 365) that automatically cascades field values from parent records to related child records. Keep your data synchronized across relationships without writing a single line of code.
+
+CascadeFields provides an **XrmToolBox** interface to configure a Dataverse plugin. The plugin will: ➡️Automatically cascade field changes from parent to child records. ➡️Populate child records when created or re-linked to a parent ➡️Filter which child records should be updated ➡️Control exactly which field changes trigger cascades ➡️Handle complex scenarios with multiple child entity types
+✅ Achieve **50-98%** performance improvement over PA flows.
+
+<div style="clear: both;"></div>
 
 ## 🚀 Quick Start
 
@@ -8,10 +16,12 @@ A powerful, no-code solution for Microsoft Dataverse (Dynamics 365) that automat
 
 1. Open **XrmToolBox**
 2. Search for **CascadeFields Configurator** in the Tool Library
-3. Install and launch the tool
-4. Connect to your Dataverse environment
-5. Configure your cascades using the visual interface
-6. Click **Publish** - done!
+   <img width="800" alt="image" src="https://github.com/user-attachments/assets/53cf2e1f-7382-4c84-b6b0-c3183e310903" />
+
+4. Install and launch the tool
+5. Connect to your Dataverse environment
+6. Configure your cascades using the visual interface
+7. Click **Publish** - done!
 
 No manual plugin registration, no JSON editing, no deployment hassles. The Configurator handles everything for you.
 
