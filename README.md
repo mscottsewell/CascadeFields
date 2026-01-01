@@ -16,10 +16,12 @@ CascadeFields provides an **XrmToolBox** interface to configure a Dataverse plug
 
 1. Open **XrmToolBox**
 2. Search for **CascadeFields Configurator** in the Tool Library
-3. Install and launch the tool
-4. Connect to your Dataverse environment
-5. Configure your cascades using the visual interface
-6. Click **Publish** - done!
+   <img width="800" alt="image" src="https://github.com/user-attachments/assets/53cf2e1f-7382-4c84-b6b0-c3183e310903" />
+
+4. Install and launch the tool
+5. Connect to your Dataverse environment
+6. Configure your cascades using the visual interface
+7. Click **Publish** - done!
 
 No manual plugin registration, no JSON editing, no deployment hassles. The Configurator handles everything for you.
 
