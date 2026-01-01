@@ -29,7 +29,7 @@ CascadeFields provides an **XrmToolBox** interface to configure a Dataverse plug
 
 No manual plugin registration, no JSON editing, no deployment hassles. The Configurator handles everything for you.
 
-<img width="1400" height="700" alt="image" src="https://github.com/user-attachments/assets/957b0391-5e44-4189-8fa2-d37ce081a1b8" />
+<img width="1349" height="735" alt="image" src="https://github.com/user-attachments/assets/d8008705-dd1c-4508-a830-3e2eae02a1e4" />
 
 
 ## Why CascadeFields?
