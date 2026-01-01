@@ -136,31 +136,15 @@ When a child's parent lookup is changed:
 
 ### Account-to-Contact Synchronization
 
-Keep contact information synchronized with their parent account:
+Keep contact information synchronized with their parent account for simplicity:
 
 - Cascade address changes to all contacts
-- Update industry, status, or classification fields
+- Update industry, status, credit, or classification fields
 - Maintain consistent branding or territory assignments
-
-### Opportunity-to-Product Cascading
-
-Ensure products stay aligned with opportunity details:
-
-- Cascade expected close dates
-- Update discount tiers or pricing changes
-- Synchronize sales territories
-
-### Case-to-Activity Propagation
-
-Keep activities in sync with their parent case:
-
-- Cascade priority changes to all related activities
-- Update subject or category information
-- Maintain consistent SLA tracking
 
 ### Multi-Level Hierarchies
 
-Handle complex organizational structures:
+Handle complex organizational structures by cascading references enabling easier filtering and navigability visibility:
 
 - Department → Team → Employee cascades
 - Project → Phase → Task synchronization
