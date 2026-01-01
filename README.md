@@ -14,6 +14,8 @@ CascadeFields provides an **XrmToolBox** interface to configure a Dataverse plug
 
 **The easiest way to get started:**
 
+> For more complete "getting started" instructions see [QUICKSTART.md](QUICKSTART.md)
+
 1. Open **XrmToolBox**
 2. Search for **CascadeFields Configurator** in the Tool Library
    
