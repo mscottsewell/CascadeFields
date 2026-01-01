@@ -241,7 +241,7 @@ The visual interface guides you through configuration:
 1. **Select Solution** - Choose the unmanaged solution containing the parent and child entities you're configuring.  
 Note: The plugin assembly and related step components will be added to this solution upon publishing.
 2. **Choose Parent Entity** - Pick the entity to monitor for changes. The tool automatically loads any existing configuration for that entity. If no child relationships are configured, you'll be prompted to add one immediately.
-3. **Add Relationships** - Select which child entities to cascade to (or use the auto-prompt when selecting a new parent)
+3. **Add Relationships** - Select which child entities to cascade to. The list is filtered to entities in the solution with a many-to-one relationship to the parent.
 4. **Map Fields** - Select the parent fields you want copied to child fields
 5. **Set Filters** - Optionally filter which children receive updates.  
 Note: Use criteria like 'statecode = 0' (Status = Active) to limit updates to only active records.
@@ -254,20 +254,27 @@ The Configurator is divided into two main panes:
 
 **Left Pane - Configuration & Logging:**
 
+
 The left pane contains three tabs:
 
-| Tab | Description |
-| --- | --- |
-| **Configuration** | Select your Solution and Parent Entity. These dropdowns filter entities to only those in the selected solution. |
-| **Log** | Real-time activity log showing operations, metadata loading, and status messages. Useful for troubleshooting. |
-| **JSON Preview** | Live preview of the generated JSON configuration. Updates automatically as you make changes. |
+| Tab              | Description                                                                                                 |
+|------------------|-------------------------------------------------------------------------------------------------------------|
+| **Configuration**| Main configuration controls: select Solution, select Parent Entity, and manage configuration checkboxes.     |
+| **Log**          | Real-time activity log showing operations, metadata loading, and status messages. Useful for troubleshooting. |
+| **JSON Preview** | Live preview of the generated JSON configuration. Updates automatically as you make changes.                 |
 
-Below the tabs are two important checkboxes:
+**Configuration Tab Controls:**
 
-| Checkbox | Description | Recommendation |
-| --- | --- | --- |
-| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. | ✅ Enable during development and testing. ⚠️ **Disable in production** to reduce log volume and improve performance. |
-| **Is Active** | When checked, the configuration is active and the plugin will process cascades. | Uncheck to temporarily disable cascading without removing the configuration. |
+- **Solution Selector:** Dropdown to choose the unmanaged solution where plugin components will be added.
+- **Parent Entity Selector:** Dropdown to select the parent entity to configure. Filters to entities in the selected solution.
+
+Below these controls are three important checkboxes:
+
+| Checkbox                  | Description                                                                                                    | Recommendation                                                                                   |
+|---------------------------|----------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------|
+| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution.                                         | ✅ Enable during development and testing. ⚠️ **Disable in production** to reduce log volume and improve performance. |
+| **Is Active**               | When checked, the configuration is active and the plugin will process cascades.                                | Uncheck to temporarily disable cascading without removing the configuration.                      |
+| **Show Advanced/JSON**      | When checked, displays advanced options and the raw JSON configuration for expert users and troubleshooting.   | Leave unchecked unless you need to review or edit the raw configuration directly.                 |
 
 **Right Pane - Relationship Configuration:**
 
