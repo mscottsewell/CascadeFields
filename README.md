@@ -290,9 +290,9 @@ Below these controls are three important checkboxes:
 | --- | --- | --- |
 | **Is Active** | When checked, the configuration is active and the plugin will process cascades. | Uncheck and publish to temporarily disable cascading without removing the configuration. |
 | **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent System Job storage bloat. (Only applies to parent step since child steps run synchronously.) | ✅ Disable during development and testing to monitor successful jobs. <br> ⚠️ **Enable in production** to avoid System Job bloat |
-| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. | ✅ Enable during development and testing. <br> ⚠️ **Disable in production** to reduce log volume and improve performance. |
+| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. <br> > **Note (Org Setting Required):** This checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have **Plug-in trace log** enabled (see “Plugin Trace Logs” below). | ✅ Enable during development and testing. <br> ⚠️ **Disable in production** to reduce log volume and improve performance. |
 
-> **Note (Org Setting Required):** This checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have **Plug-in trace log** enabled (see “Plugin Trace Logs” below).
+
 
 **Right Pane - Relationship Configuration:**
 
