@@ -236,6 +236,7 @@ The script automatically detects changes to the Plugin project using git and:
 ### Using the Configurator (Recommended)
 
 The visual interface guides you through configuration:
+<img width="1212" height="483" alt="Interface" src="https://github.com/user-attachments/assets/99cb1296-dd45-4c97-b05c-96cdb24f8171" />
 
 1. **Select Solution** - Choose the unmanaged solution containing the parent and child entities you're configuring.  
 Note: The plugin assembly and related step components will be added to this solution upon publishing.
@@ -244,8 +245,7 @@ Note: The plugin assembly and related step components will be added to this solu
 4. **Map Fields** - Select the parent fields you want copied to child fields
 5. **Set Filters** - Optionally filter which children receive updates.  
 Note: Use criteria like 'statecode = 0' (Status = Active) to limit updates to only active records.
-6. **Mark Triggers** - Specify which parent field changes trigger cascades
-7. **Publish Configuration and Plug-in** - One click deploys everything
+6. **Publish Configuration and Plug-in** - One click deploys everything
 
 ### User Interface Overview
 
@@ -254,6 +254,8 @@ The Configurator is divided into two main panes:
 **Ribbon Buttons:**
 
 The toolbar ribbon at the top contains the following buttons:
+
+<img width="885" height="70" alt="Toolbar" src="https://github.com/user-attachments/assets/64d06ce0-d835-474c-a5f8-e432053df4d0" />
 
 | Button | Purpose |
 | --- | --- |
@@ -267,6 +269,9 @@ The toolbar ribbon at the top contains the following buttons:
 **Left Pane - Configuration & Logging:**
 
 The left pane contains three tabs:
+
+<img width="1000" alt="Thre Tabs" src="https://github.com/user-attachments/assets/2743847e-8301-4bf3-8360-ecc7d363a8d6" />
+
 
 | Tab | Description |
 | --- | --- |
@@ -283,9 +288,9 @@ Below these controls are three important checkboxes:
 
 | Checkbox | Description | Recommendation |
 | --- | --- | --- |
-| **Is Active** | When checked, the configuration is active and the plugin will process cascades. | Uncheck to temporarily disable cascading without removing the configuration. |
-| **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent clutter. Only applies to parent step since child steps run synchronously. | Leave checked to keep System Jobs clean. Uncheck to monitor successful jobs. |
-| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. | ✅ Enable during development and testing. ⚠️ **Disable in production** to reduce log volume and improve performance. |
+| **Is Active** | When checked, the configuration is active and the plugin will process cascades. | Uncheck and publish to temporarily disable cascading without removing the configuration. |
+| **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent System Job storage bloat. (Only applies to parent step since child steps run synchronously.) | ✅ Disable during development and testing to monitor successful jobs. <br> ⚠️ **Enable in production** to avoid System Job bloat |
+| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. | ✅ Enable during development and testing. <br> ⚠️ **Disable in production** to reduce log volume and improve performance. |
 
 > **Note (Org Setting Required):** This checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have **Plug-in trace log** enabled (see “Plugin Trace Logs” below).
 
