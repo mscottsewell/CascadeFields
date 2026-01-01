@@ -1,6 +1,6 @@
 # CascadeFields for Microsoft Dataverse
 
-![CascadeFieldsConfigurator](https://github.com/user-attachments/assets/c6fcb5fa-de3e-41c1-b4a4-fb2d8863097e)
+<img width="180" height="180" alt="CascadeFieldsConfigurator" src="https://github.com/user-attachments/assets/c6fcb5fa-de3e-41c1-b4a4-fb2d8863097e" align="left" style="margin-right: 10px;" />
 
 
 A powerful, no-code solution for Microsoft Dataverse (Dynamics 365) that automatically cascades field values from parent records to related child records. Keep your data synchronized across relationships without writing a single line of code.
