@@ -7,169 +7,222 @@ Get up and running with CascadeFields in minutes using the XrmToolBox Configurat
 - XrmToolBox with CascadeFields Configurator plugin installed
 - Access to a Dataverse environment
 - Security roles with update permissions on parent and child entities
+- An **unmanaged solution** containing the entities you want to map (both parent and child entities)
 
-## Option 1: Using the Configurator Tool (Recommended)
+> **💡 Pro Tip:** Start simple with a single field mapping and evaluate the behavior to ensure it's what you're looking for before adding more complex configurations.
+
+## Setup Steps
 
 ### 1. Install the Configurator
 
-```powershell
-# Install from NuGet in XrmToolBox
-# Search for: CascadeFields.Configurator
-```
-
-Or build and deploy locally:
-
-```powershell
-cd c:\GitHub\CascadeFields
-pwsh -File ./pack-nuget.ps1 -Configuration Release -SkipPush
-```
+1. Open **XrmToolBox**
+2. Go to **Tools Library** (or Plugin Store)
+3. Search for **"CascadeFields Configurator"**
+4. Click **Install**
 
 ### 2. Configure Your Cascade
 
 1. Open **XrmToolBox** and launch **CascadeFields Configurator**
 2. Connect to your environment
-3. Select your **parent entity** (e.g., Account)
-4. Click **Add Related Entity**
-5. Select your **child entity** (e.g., Contact)
-6. Choose the **lookup field** that links child to parent (e.g., `parentcustomerid`)
-7. Add **field mappings**:
+3. Select your **unmanaged solution** containing the entities you want to map
+   - This solution must include both parent and child entities
+   - The plugin assembly and plugin steps will be added to this solution when published
+4. Select your **parent entity** (e.g., Account) from the entities in the solution
+   - If the entity has an existing configuration, it loads automatically
+   - If no child relationships are configured, you'll be prompted to add one immediately
+5. Select your **child entity and relationship** (e.g., Contact : Parent Account)
+   - Note: This list is filtered to entities in the solution that have a many-to-one relationship to the parent
+6. Add **field mappings**:
    - Source field: parent field name
    - Target field: child field name
-   - Trigger: check if this field should trigger the cascade
-8. Optionally add **filter criteria** (e.g., `statecode|eq|0` for active only)
+   - Trigger: check if this field should trigger the cascade when changed on the parent
+   - **Start with just one or two mappings** to verify behavior first
+7. Add **filter criteria** to limit which child records are updated:
+   - Recommended: `statecode|eq|0` (active records only)
+   - This ensures only active and editable records are affected
+   - Additional filters can be added (e.g., `statuscode|eq|1`)
 
 ### 3. Publish Configuration
 
 1. Click **Publish Configuration** in the ribbon
-2. Optionally select a solution to add components
+2. The selected solution will be updated to include:
+   - Plugin assembly (CascadeFields.Plugin)
+   - Plugin steps (parent and child steps)
 3. Wait for confirmation: "Publish complete: parent and child steps upserted"
 
 **What gets created:**
-- Parent Update step (Post-operation, Async) + PreImage
-- Child Create step (Pre-operation, Sync) per related entity
-- Child Update step (Pre-operation, Sync) per related entity with lookup field
+
+- **Parent Update step**: Post-operation, Asynchronous (updates child records after parent changes)
+- **Child Create step**: Pre-operation, Synchronous (populates fields when child is created)
+- **Child Update step**: Pre-operation, Synchronous (updates fields when child is relinked to different parent)
+
+## Understanding the User Interface
+
+### Left Pane Tabs
+
+The left pane contains three tabs:
+
+| Tab | Purpose |
+| --- | --- |
+| **Configuration** | Select your Solution and Parent Entity from dropdown menus. |
+| **Log** | View real-time activity log showing operations, metadata loading progress, and status messages. Helpful for troubleshooting. |
+| **JSON Preview** | See the live JSON configuration that will be published. Updates automatically as you make changes. |
+
+### Left Pane Checkboxes
+
+Below the tabs are two important checkboxes:
+
+| Checkbox | What it does | When to use |
+| --- | --- | --- |
+| **Enable Detailed Tracing** | Writes verbose trace logs for every plugin execution to the Plugin Trace Log. | ✅ **Enable** during development and testing to debug issues. ⚠️ **Disable** in production to reduce log volume and improve performance. |
+| **Is Active** | Controls whether the plugin processes cascades for this configuration. | Leave checked for normal operation. Uncheck to temporarily pause cascading without removing the configuration. |
+
+### Right Pane
+
+The right pane shows a tab for each configured child relationship. Each tab contains:
+
+- **Field Mappings Grid** (top) - Map source fields from the parent to target fields on the child. Check "Trigger Field" for fields that should initiate cascades when changed.
+- **Filter Criteria Grid** (bottom) - Define conditions to limit which child records receive updates (e.g., only active records).
+
+## Retrieve Configured Entity
+
+To load an existing configuration:
+
+1. Click **Retrieve Configured Entity** in the ribbon
+2. **If only one parent entity** has a configuration, it loads automatically
+3. **If multiple parent entities** are configured, a selection dialog appears:
+   - Shows all configured parent entities with their child relationships
+   - Click a parent row (or any of its child rows) to select it
+   - Click **OK** to load the complete configuration
+
+> **Tip:** When you select a parent entity from the dropdown, any existing configuration for that entity loads automatically. If no child relationships exist, you'll be prompted to add one.
 
 ### 4. Test It
 
 **Parent Update Test:**
+
 1. Open a parent record (e.g., Account)
 2. Change a trigger field
 3. Save and wait 5-10 seconds (async)
 4. Check related child records - fields should be updated
 
 **Child Create Test:**
+
 1. Create a new child record (e.g., Contact)
 2. Set the parent lookup field (e.g., Account)
 3. Save
 4. Mapped fields should be populated immediately
 
 **Child Relink Test:**
+
 1. Open an existing child record
 2. Change the parent lookup to a different parent
 3. Save
 4. Mapped fields should update to new parent's values
 
-### 5. Monitor Execution
+### 5. Monitor and Debug
 
-**View Trace Logs:**
-1. Settings → Plug-in Trace Log
-2. Filter by: `CascadeFieldsPlugin`
-3. Look for: "Plugin Execution Completed Successfully"
+**View Plugin Trace Logs:**
+
+Plugin trace logs are your best tool for debugging and understanding what CascadeFields is doing.
+
+1. In your Dataverse environment, navigate to:
+   - **Settings** → **Customizations** → **Plug-in Trace Log**
+   - Or search for "Plugin Trace Log" in the search bar
+2. Filter the view:
+   - **Type Name** contains `CascadeFieldsPlugin`
+   - Sort by **Created On** (newest first)
+3. Open a log entry to see detailed execution information:
+   - Configuration being used
+   - Records being processed
+   - Fields being updated
+   - Any errors or warnings
+
+**Enable Detailed Tracing (Development Only):**
+
+For more detailed logs during testing:
+
+1. Edit your configuration in the Configurator
+2. Set logging level to verbose (if available)
+3. **⚠️ Important:** Do not leave detailed tracing enabled in production environments as it impacts performance and creates excessive log records
 
 **Check System Jobs (for parent updates):**
-1. Settings → System Jobs
-2. Filter by: System Job Type = "Plug-in"
-3. Verify status: Succeeded
 
-## Option 2: Manual Registration (Advanced)
+Since parent updates run asynchronously:
 
-If you prefer manual setup without the Configurator:
+1. Navigate to **Settings** → **System Jobs**
+2. Filter by:
+   - **System Job Type** = "Plug-in"
+   - **Regarding** = your parent record
+3. Verify status: **Succeeded**
+4. If failed, click the job to see error details
 
-### 1. Build the Plugin
+## Removing or Modifying Mappings
 
-```powershell
-cd c:\GitHub\CascadeFields
-dotnet build -c Release
-```
+### Remove a Mapping
 
-Output: `CascadeFields.Plugin\bin\Release\net462\CascadeFields.Plugin.dll`
+#### Using the Configurator
 
-### 2. Register Assembly
+1. Open **CascadeFields Configurator** in XrmToolBox
+2. Connect to your environment
+3. Load the configuration for the parent entity
+4. Select the related entity you want to remove
+5. Click **Remove Related Entity** or modify field mappings as needed
+6. Click **Publish Configuration** to update
 
-1. Open Plugin Registration Tool
-2. Register → Register New Assembly
-3. Select `CascadeFields.Plugin.dll`
-4. Isolation: Sandbox, Location: Database
+#### Uninstalling Completely
 
-### 3. Prepare Configuration JSON
+To remove the plugin assembly and all associated steps:
 
-See `Examples\` folder for templates. Example:
+**Option 1: Using Power Apps Maker Portal**
 
-```json
-{
-  "parentEntity": "account",
-  "isActive": true,
-  "relatedEntities": [
-    {
-      "entityName": "contact",
-      "useRelationship": false,
-      "lookupFieldName": "parentcustomerid",
-      "filterCriteria": "statecode|eq|0",
-      "fieldMappings": [
-        {
-          "sourceField": "address1_city",
-          "targetField": "address1_city",
-          "isTriggerField": true
-        }
-      ]
-    }
-  ]
-}
-```
+1. Navigate to [make.powerapps.com](https://make.powerapps.com)
+2. Select your environment
+3. Go to **Solutions** → select your solution
+4. Find **Plugin Assemblies** → select **CascadeFields.Plugin**
+5. Click **Remove** → **Delete** (this will also remove all associated steps)
 
-### 4. Register Parent Step
+**Option 2: Using Plugin Registration Tool**
 
-- **Message**: Update
-- **Primary Entity**: account
-- **Stage**: PostOperation (40)
-- **Mode**: Asynchronous
-- **Unsecure Config**: [paste JSON]
-- **Filtering Attributes**: [select trigger fields]
-- **PreImage**: Name=PreImage, Alias=PreImage, Attributes=[source fields]
+1. Open the **Plugin Registration Tool**
+2. Connect to your environment
+3. Find **CascadeFields.Plugin** in the assembly list
+4. Right-click → **Unregister**
+5. Confirm to remove the assembly and all steps
 
-### 5. Register Child Steps (per related entity)
-
-**Create Step:**
-- **Message**: Create
-- **Primary Entity**: contact
-- **Stage**: PreOperation (20)
-- **Mode**: Synchronous
-- **Unsecure Config**: [same JSON]
-
-**Update Step (for relink):**
-- **Message**: Update
-- **Primary Entity**: contact
-- **Stage**: PreOperation (20)
-- **Mode**: Synchronous
-- **Unsecure Config**: [same JSON]
-- **Filtering Attributes**: parentcustomerid
-- **PreImage**: Name=PreImage, Alias=PreImage, Attributes=parentcustomerid
+> **Note:** Always test removal in a development environment first. Removing the plugin will stop all cascade operations immediately.
 
 ## Troubleshooting
 
 | Issue | Solution |
-|-------|----------|
+| --- | --- |
 | Plugin doesn't fire | Check filtering attributes match trigger fields |
 | Child records not updating | Verify lookup field name is correct |
 | Permission errors | Ensure users have update rights on child entities |
 | Values not copying | Check field names are exact (case-sensitive) |
 
+## Best Practices
+
+✅ **Do:**
+
+- Start with simple mappings and test thoroughly
+- Use filter criteria to limit updates to active/editable records only
+- Test in a development environment first
+- Monitor plugin trace logs during initial testing
+- Keep your unmanaged solution up to date with entity changes
+
+⚠️ **Don't:**
+
+- Leave detailed tracing enabled in production
+- Create circular cascades (A → B → A)
+- Map fields with different data types without testing
+- Deploy directly to production without testing
+
 ## Next Steps
 
-- Review [README.md](README.md) for detailed documentation
-- Check [CONFIGURATION.md](CONFIGURATION.md) for advanced patterns
-- Explore `Examples\` folder for more configurations
-- Set `enableTracing: false` in production for better performance
+- Review [README.md](README.md) for detailed documentation and architecture
+- Check [CONFIGURATION.md](CONFIGURATION.md) for advanced configuration patterns
+- Explore the `Examples\` folder for more sample configurations
 
 ## Getting Help
 

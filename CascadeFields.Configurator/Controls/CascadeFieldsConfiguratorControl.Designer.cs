@@ -19,14 +19,11 @@ namespace CascadeFields.Configurator.Controls
         private Button btnImportJson = null!;
         private Button btnPublish = null!;
         private SplitContainer splitContainerMain;
-        private SplitContainer splitContainerLeft;
-        private SplitContainer splitContainerRight;
-        private TableLayoutPanel leftUpperLayout;
         private TabControl tabControlLeftLower;
+        private TabPage tabConfiguration;
         private TabPage tabLog;
         private TabPage tabJson;
         private TabControl tabControlRightUpper;
-        private Panel panelRightLower;
         private Label lblSolution;
         private ComboBox cmbSolution;
         private Label lblParentEntity;
@@ -35,6 +32,7 @@ namespace CascadeFields.Configurator.Controls
         private TextBox txtJsonPreview;
         private CheckBox chkEnableTracing;
         private CheckBox chkIsActive;
+        private CheckBox chkDeleteAsyncOperationIfSuccessful;
         private Label lblStatus;
 
         private static Image LoadIcon(string fileName)
@@ -89,42 +87,30 @@ namespace CascadeFields.Configurator.Controls
             btnRemoveRelationship = new Button();
             btnPublish = new Button();
             splitContainerMain = new SplitContainer();
-            splitContainerLeft = new SplitContainer();
-            leftUpperLayout = new TableLayoutPanel();
-            lblSolution = new Label();
-            cmbSolution = new ComboBox();
-            lblParentEntity = new Label();
-            cmbParentEntity = new ComboBox();
             tabControlLeftLower = new TabControl();
+            tabConfiguration = new TabPage();
             tabLog = new TabPage();
             txtLog = new TextBox();
             tabJson = new TabPage();
             txtJsonPreview = new TextBox();
-            splitContainerRight = new SplitContainer();
             tabControlRightUpper = new TabControl();
-            panelRightLower = new Panel();
-            chkEnableTracing = new CheckBox();
+            lblSolution = new Label();
+            cmbSolution = new ComboBox();
+            lblParentEntity = new Label();
+            cmbParentEntity = new ComboBox();
             chkIsActive = new CheckBox();
+            chkDeleteAsyncOperationIfSuccessful = new CheckBox();
+            chkEnableTracing = new CheckBox();
             lblStatus = new Label();
             ribbonPanel.SuspendLayout();
             ((ISupportInitialize)splitContainerMain).BeginInit();
             splitContainerMain.Panel1.SuspendLayout();
             splitContainerMain.Panel2.SuspendLayout();
             splitContainerMain.SuspendLayout();
-            ((ISupportInitialize)splitContainerLeft).BeginInit();
-            splitContainerLeft.Panel1.SuspendLayout();
-            splitContainerLeft.Panel2.SuspendLayout();
-            splitContainerLeft.SuspendLayout();
-            leftUpperLayout.SuspendLayout();
             tabControlLeftLower.SuspendLayout();
+            tabConfiguration.SuspendLayout();
             tabLog.SuspendLayout();
             tabJson.SuspendLayout();
-            ((ISupportInitialize)splitContainerRight).BeginInit();
-            splitContainerRight.Panel1.SuspendLayout();
-            splitContainerRight.Panel2.SuspendLayout();
-            splitContainerRight.SuspendLayout();
-            tabControlRightUpper.SuspendLayout();
-            panelRightLower.SuspendLayout();
             SuspendLayout();
             // 
             // ribbonPanel
@@ -207,36 +193,15 @@ namespace CascadeFields.Configurator.Controls
             btnPublish.UseVisualStyleBackColor = true;
             btnPublish.Image = LoadIcon("CascadeFields_PublishConfig_24.png");
             btnPublish.TextImageRelation = TextImageRelation.ImageBeforeText;            
-            // 
+            //
             // splitContainerMain
-            // 
+            //
             splitContainerMain.Dock = DockStyle.Fill;
             splitContainerMain.SplitterDistance = 420;
-            
-            // Create a panel for left side with fixed controls at top
+
+            // Left panel - tabs only
             var leftPanel = new Panel { Dock = DockStyle.Fill };
-            
-            // Add fixed layout for all entity/form selectors at top
-            var fixedLayout = new TableLayoutPanel
-            {
-                ColumnCount = 2,
-                Dock = DockStyle.Top,
-                AutoSize = true,
-                Padding = new Padding(8)
-            };
-            fixedLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35F));
-            fixedLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65F));
-            fixedLayout.RowCount = 2;  // Solution + Parent Entity
-            fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
-            fixedLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
-            fixedLayout.Controls.Add(lblSolution, 0, 0);
-            fixedLayout.Controls.Add(cmbSolution, 1, 0);
-            fixedLayout.Controls.Add(lblParentEntity, 0, 1);
-            fixedLayout.Controls.Add(cmbParentEntity, 1, 1);
-            
-            // Add tab control directly below the fixed header (no splitter needed for left side)
-            tabControlLeftLower.Dock = DockStyle.Fill;
-            
+
             // Status label at bottom of left panel
             lblStatus.Dock = DockStyle.Bottom;
             lblStatus.Text = "Ready";
@@ -244,41 +209,90 @@ namespace CascadeFields.Configurator.Controls
             lblStatus.Height = 25;
             lblStatus.Padding = new Padding(4);
             lblStatus.BorderStyle = BorderStyle.FixedSingle;
-            
+
+            // Tab control fills remaining space
+            tabControlLeftLower.Dock = DockStyle.Fill;
+
             leftPanel.Controls.Add(tabControlLeftLower);
             leftPanel.Controls.Add(lblStatus);
-            leftPanel.Controls.Add(fixedLayout);
-            
+
             splitContainerMain.Panel1.Controls.Add(leftPanel);
-            splitContainerMain.Panel2.Controls.Add(splitContainerRight);
-            
-            // Remove old leftUpperLayout references
-            // leftUpperLayout is no longer needed
-            // 
-            // labels and combos
-            // 
+            splitContainerMain.Panel2.Controls.Add(tabControlRightUpper);
+
+            //
+            // tabControlLeftLower
+            //
+            tabControlLeftLower.Dock = DockStyle.Fill;
+            tabControlLeftLower.Controls.Add(tabConfiguration);
+            tabControlLeftLower.Controls.Add(tabLog);
+            tabControlLeftLower.Controls.Add(tabJson);
+
+            //
+            // tabConfiguration
+            //
+            tabConfiguration.Text = "Configuration";
+            tabConfiguration.Padding = new Padding(8);
+
+            // Create layout for Configuration tab content
+            var configLayout = new TableLayoutPanel
+            {
+                ColumnCount = 2,
+                Dock = DockStyle.Fill,
+                AutoSize = true,
+                Padding = new Padding(4)
+            };
+            configLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35F));
+            configLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65F));
+            configLayout.RowCount = 5;  // Solution, Parent Entity, Active, Delete Async, Enable Tracing
+            configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+
+            // Add controls to layout
+            configLayout.Controls.Add(lblSolution, 0, 0);
+            configLayout.Controls.Add(cmbSolution, 1, 0);
+            configLayout.Controls.Add(lblParentEntity, 0, 1);
+            configLayout.Controls.Add(cmbParentEntity, 1, 1);
+
+            // Add checkboxes spanning both columns
+            configLayout.Controls.Add(chkIsActive, 0, 2);
+            configLayout.SetColumnSpan(chkIsActive, 2);
+            configLayout.Controls.Add(chkDeleteAsyncOperationIfSuccessful, 0, 3);
+            configLayout.SetColumnSpan(chkDeleteAsyncOperationIfSuccessful, 2);
+            configLayout.Controls.Add(chkEnableTracing, 0, 4);
+            configLayout.SetColumnSpan(chkEnableTracing, 2);
+
+            tabConfiguration.Controls.Add(configLayout);
+
+            //
+            // lblSolution
+            //
             lblSolution.Text = "Solution";
             lblSolution.Anchor = AnchorStyles.Left;
             lblSolution.AutoSize = true;
             lblSolution.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
 
+            //
+            // cmbSolution
+            //
             cmbSolution.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             cmbSolution.DropDownStyle = ComboBoxStyle.DropDownList;
 
+            //
+            // lblParentEntity
+            //
             lblParentEntity.Text = "Parent Entity";
             lblParentEntity.Anchor = AnchorStyles.Left;
             lblParentEntity.AutoSize = true;
             lblParentEntity.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
 
+            //
+            // cmbParentEntity
+            //
             cmbParentEntity.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             cmbParentEntity.DropDownStyle = ComboBoxStyle.DropDownList;
-
-            // 
-            // tabControlLeftLower
-            // 
-            tabControlLeftLower.Dock = DockStyle.Fill;
-            tabControlLeftLower.Controls.Add(tabLog);
-            tabControlLeftLower.Controls.Add(tabJson);
 
             // 
             // tabLog
@@ -305,71 +319,53 @@ namespace CascadeFields.Configurator.Controls
             txtJsonPreview.ReadOnly = true;
             txtJsonPreview.Font = new System.Drawing.Font("Consolas", 9F);
 
-            // 
-            // splitContainerRight (Upper 70% / Lower 30%)
-            // 
-            splitContainerRight.Dock = DockStyle.Fill;
-            splitContainerRight.Orientation = Orientation.Horizontal;
-            splitContainerRight.SplitterWidth = 5;
-            splitContainerRight.FixedPanel = FixedPanel.Panel2;
-            splitContainerRight.Panel2MinSize = 40;
-            splitContainerRight.Panel1.Controls.Add(tabControlRightUpper);
-            splitContainerRight.Panel2.Controls.Add(panelRightLower);
-
-            // 
+            //
             // tabControlRightUpper
-            // 
+            //
             tabControlRightUpper.Dock = DockStyle.Fill;
             tabControlRightUpper.DrawMode = TabDrawMode.OwnerDrawFixed;
             tabControlRightUpper.SizeMode = TabSizeMode.Fixed;
-                tabControlRightUpper.ItemSize = new Size(180, 75);
-                tabControlRightUpper.Padding = new System.Drawing.Point(0, 0);
+            tabControlRightUpper.ItemSize = new Size(180, 75);
+            tabControlRightUpper.Padding = new System.Drawing.Point(0, 0);
             tabControlRightUpper.Alignment = TabAlignment.Top;
             tabControlRightUpper.DrawItem += TabControlRightUpper_DrawItem;
             // Child entity tabs will be added dynamically
 
-            // 
-            // panelRightLower
-            // 
-            panelRightLower.Dock = DockStyle.Fill;
-            panelRightLower.Padding = new Padding(8);
-            
-            // Create layout for checkboxes: EnableTracing on left, IsActive on right
-            var checkboxLayout = new TableLayoutPanel
-            {
-                ColumnCount = 2,
-                RowCount = 1,
-                Dock = DockStyle.Bottom,
-                AutoSize = true,
-                Height = 30
-            };
-            checkboxLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 70F));
-            checkboxLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30F));
-            checkboxLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
-            checkboxLayout.Controls.Add(chkEnableTracing, 0, 0);
-            checkboxLayout.Controls.Add(chkIsActive, 1, 0);
-            
-            panelRightLower.Controls.Add(checkboxLayout);
-
-            // 
+            //
             // chkIsActive
-            // 
-            chkIsActive.Dock = DockStyle.Bottom;
+            //
             chkIsActive.Text = "Is Active";
             chkIsActive.Checked = true;
-            chkIsActive.Height = 25;
+            chkIsActive.AutoSize = true;
             chkIsActive.Padding = new Padding(4);
+            chkIsActive.Margin = new Padding(0, 5, 0, 0);
 
-            // 
+            //
+            // chkDeleteAsyncOperationIfSuccessful
+            //
+            chkDeleteAsyncOperationIfSuccessful.Text = "Auto-delete Successful System Jobs (Parent step only)";
+            chkDeleteAsyncOperationIfSuccessful.Checked = true;
+            chkDeleteAsyncOperationIfSuccessful.AutoSize = true;
+            chkDeleteAsyncOperationIfSuccessful.Padding = new Padding(4);
+            chkDeleteAsyncOperationIfSuccessful.Margin = new Padding(0, 5, 0, 0);
+            // Create tooltip for the checkbox
+            var toolTip = new ToolTip();
+            toolTip.SetToolTip(chkDeleteAsyncOperationIfSuccessful,
+                "When enabled, successful async operations (parent update step) will be automatically deleted from System Jobs.\n" +
+                "This helps prevent clutter in the System Jobs table.\n" +
+                "Note: Only applies to the parent update step since child steps run synchronously.\n" +
+                "Uncheck to keep successful jobs visible for monitoring.");
+
+            //
             // chkEnableTracing
-            // 
-            chkEnableTracing.Dock = DockStyle.Bottom;
+            //
             chkEnableTracing.Text = "Enable Detailed Tracing (disable in production for reduced log verbosity)";
-            chkEnableTracing.Checked = true;
-            chkEnableTracing.Height = 30;
+            chkEnableTracing.Checked = false;
+            chkEnableTracing.AutoSize = true;
             chkEnableTracing.Padding = new Padding(4);
+            chkEnableTracing.Margin = new Padding(0, 5, 0, 0);
 
-            // 
+            //
             // CascadeFieldsConfiguratorControl
             // 
             AutoScaleMode = AutoScaleMode.Font;
@@ -383,23 +379,12 @@ namespace CascadeFields.Configurator.Controls
             splitContainerMain.Panel2.ResumeLayout(false);
             ((ISupportInitialize)splitContainerMain).EndInit();
             splitContainerMain.ResumeLayout(false);
-            splitContainerLeft.Panel1.ResumeLayout(false);
-            splitContainerLeft.Panel2.ResumeLayout(false);
-            ((ISupportInitialize)splitContainerLeft).EndInit();
-            splitContainerLeft.ResumeLayout(false);
-            leftUpperLayout.ResumeLayout(false);
-            leftUpperLayout.PerformLayout();
             tabControlLeftLower.ResumeLayout(false);
+            tabConfiguration.ResumeLayout(false);
             tabLog.ResumeLayout(false);
             tabLog.PerformLayout();
             tabJson.ResumeLayout(false);
             tabJson.PerformLayout();
-            splitContainerRight.Panel1.ResumeLayout(false);
-            splitContainerRight.Panel2.ResumeLayout(false);
-            ((ISupportInitialize)splitContainerRight).EndInit();
-            splitContainerRight.ResumeLayout(false);
-            tabControlRightUpper.ResumeLayout(false);
-            panelRightLower.ResumeLayout(false);
             ResumeLayout(false);
             PerformLayout();
         }

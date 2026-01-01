@@ -6,7 +6,7 @@
 A powerful, no-code solution for Microsoft Dataverse (Dynamics 365) that automatically cascades field values from parent records to related child records. Keep your data synchronized across relationships without writing a single line of code.
 
 CascadeFields provides an **XrmToolBox** interface to configure a Dataverse plugin. The plugin will: ➡️Automatically cascade field changes from parent to child records. ➡️Populate child records when created or re-linked to a parent ➡️Filter which child records should be updated ➡️Control exactly which field changes trigger cascades ➡️Handle complex scenarios with multiple child entity types
-✅ Achieve **50-98%** performance improvement over PA flows.
+✅ Achieve **50-98%** performance improvement over implementing the same feature using Power Automate.
 
 <div style="clear: both;"></div>
 
@@ -21,12 +21,15 @@ CascadeFields provides an **XrmToolBox** interface to configure a Dataverse plug
 
 3. Install and launch the tool
 4. Connect to your Dataverse environment
-5. Configure your cascades using the visual interface
-6. Click **Publish** - done!
+5. Choose an unmanaged solution containing the parent and child entities
+6. Select a **Parent Entity** - the tool will automatically prompt you to add a child relationship if none are configured
+7. Configure your fields to cascade using the visual interface
+8. Add filters and trigger fields as needed
+9. Click **Publish** - done!
 
 No manual plugin registration, no JSON editing, no deployment hassles. The Configurator handles everything for you.
 
-<img width="1400" height="789" alt="image" src="https://github.com/user-attachments/assets/957b0391-5e44-4189-8fa2-d37ce081a1b8" />
+<img width="1400" height="700" alt="image" src="https://github.com/user-attachments/assets/957b0391-5e44-4189-8fa2-d37ce081a1b8" />
 
 
 ## Why CascadeFields?
@@ -49,7 +52,17 @@ CascadeFields provides a **visual, no-code** interface to:
 - ✅ Filter which child records should be updated
 - ✅ Control exactly which field changes trigger cascades
 - ✅ Handle complex scenarios with multiple child entity types
-- ✅ Achieve 50-98% performance improvement over traditional flows
+- ✅ Achieve 50-98% performance improvement over traditional Power Automate flows
+- ✅ Deploy quickly with minimal effort using the XrmToolBox Configurator
+- ✅ Maintain easily with built-in validation, session persistence, and update management
+- ✅ Leverage open-source code for customization if needed
+- ✅ Benefit from comprehensive documentation and examples
+- ✅ Ensure security with user-context execution and injection protection
+- ✅ Monitor performance with detailed tracing and logging
+- ✅ Avoid infinite loops with automatic depth protection
+- ✅ Keep everything solution-aware for easy deployment and versioning
+- ✅ Save time and resources compared to custom development
+- 
 
 ### Perfect For
 
@@ -192,6 +205,27 @@ dotnet build -c Release
 # Configurator: CascadeFields.Configurator\bin\Release\...
 ```
 
+**Build Script:**
+
+The `pack-nuget.ps1` script handles building, versioning, and packaging:
+
+```powershell
+# Standard build (increments both Configurator and Plugin versions)
+.\pack-nuget.ps1 -SkipPush
+
+# Smart build (only increments Plugin version if it has changes)
+.\pack-nuget.ps1 -SkipPush
+
+# Skip Plugin rebuild if unchanged (uses existing binaries)
+.\pack-nuget.ps1 -SkipPush -SkipPluginRebuildIfUnchanged
+```
+
+The script automatically detects changes to the Plugin project using git and:
+
+- Only increments the Plugin's file version when there are actual code changes
+- Optionally skips rebuilding the Plugin entirely if unchanged (with `-SkipPluginRebuildIfUnchanged`)
+- Always increments the Configurator version (unless `-SkipVersionBump` is used)
+
 **Requirements:**
 
 - Visual Studio 2019 or later
@@ -204,13 +238,53 @@ dotnet build -c Release
 
 The visual interface guides you through configuration:
 
-1. **Select Solution** - Choose where components will be added
-2. **Choose Parent Entity** - Pick the entity to monitor for changes
-3. **Add Relationships** - Select which child entities to cascade to
-4. **Map Fields** - Drag and drop to map parent fields to child fields
-5. **Set Filters** - Optionally filter which children receive updates
+1. **Select Solution** - Choose the unmanaged solution containing the parent and child entities you're configuring.  
+Note: The plugin assembly and related step components will be added to this solution upon publishing.
+2. **Choose Parent Entity** - Pick the entity to monitor for changes. The tool automatically loads any existing configuration for that entity. If no child relationships are configured, you'll be prompted to add one immediately.
+3. **Add Relationships** - Select which child entities to cascade to (or use the auto-prompt when selecting a new parent)
+4. **Map Fields** - Select the parent fields you want copied to child fields
+5. **Set Filters** - Optionally filter which children receive updates.  
+Note: Use criteria like 'statecode = 0' (Status = Active) to limit updates to only active records.
 6. **Mark Triggers** - Specify which parent field changes trigger cascades
 7. **Publish** - One click deploys everything
+
+### User Interface Overview
+
+The Configurator is divided into two main panes:
+
+**Left Pane - Configuration & Logging:**
+
+The left pane contains three tabs:
+
+| Tab | Description |
+| --- | --- |
+| **Configuration** | Select your Solution and Parent Entity. These dropdowns filter entities to only those in the selected solution. |
+| **Log** | Real-time activity log showing operations, metadata loading, and status messages. Useful for troubleshooting. |
+| **JSON Preview** | Live preview of the generated JSON configuration. Updates automatically as you make changes. |
+
+Below the tabs are two important checkboxes:
+
+| Checkbox | Description | Recommendation |
+| --- | --- | --- |
+| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. | ✅ Enable during development and testing. ⚠️ **Disable in production** to reduce log volume and improve performance. |
+| **Is Active** | When checked, the configuration is active and the plugin will process cascades. | Uncheck to temporarily disable cascading without removing the configuration. |
+
+**Right Pane - Relationship Configuration:**
+
+The right pane displays tabs for each configured child relationship. Each tab contains:
+
+- **Field Mappings Grid** - Map source (parent) fields to target (child) fields, with a checkbox to mark trigger fields
+- **Filter Criteria Grid** - Define conditions to limit which child records are updated
+
+### Retrieve Configured Entity
+
+Click **Retrieve Configured Entity** in the toolbar to load an existing configuration:
+
+- If **only one parent entity** has a configuration, it loads automatically without prompting
+- If **multiple parent entities** are configured, a selection dialog appears showing all configured parents with their child relationships
+- Select a parent row to load its complete configuration (all child relationships, field mappings, and filters)
+
+> **Note:** Clicking a child row in the selector will automatically highlight its parent row, ensuring you always load the complete parent configuration.
 
 The Configurator automatically:
 
@@ -358,13 +432,17 @@ To contribute:
 
 ### Configurator Features
 
-- Visual relationship configuration
-- Real-time JSON preview
-- Pre-publish validation
-- Session persistence
-- Solution component management
-- Plugin version checking
-- Progress reporting
+- Visual relationship configuration with intuitive tabbed interface
+- Real-time JSON preview with live updates
+- Three-tab left pane: Configuration, Log, and JSON Preview
+- Pre-publish validation catches errors before deployment
+- Session persistence resumes where you left off
+- Solution component management with automatic additions
+- Plugin version checking and update recommendations
+- Progress reporting with detailed status messages
+- Auto-load configuration when switching parent entities
+- Auto-prompt to add relationships for unconfigured parents
+- Smart retrieve functionality (auto-loads single configurations, shows picker for multiple)
 
 ## License
 

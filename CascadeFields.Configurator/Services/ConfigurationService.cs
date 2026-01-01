@@ -609,20 +609,28 @@ namespace CascadeFields.Configurator.Services
             step["mode"] = new OptionSetValue(1); // Async
             step["rank"] = 1;
             step["supporteddeployment"] = new OptionSetValue(0); // Server
+            step["asyncautodelete"] = config.DeleteAsyncOperationIfSuccessful;
             step["configuration"] = JsonConvert.SerializeObject(config);
             if (!string.IsNullOrWhiteSpace(triggerFields)) step["filteringattributes"] = triggerFields;
 
             Guid id;
             if (step.Id == Guid.Empty)
             {
+                progress.Report($"Creating processing step with DeleteAsyncOperationIfSuccessful={config.DeleteAsyncOperationIfSuccessful}...");
                 id = _service.Create(step);
                 progress.Report("Created processing step.");
             }
             else
             {
+                progress.Report($"Updating processing step with DeleteAsyncOperationIfSuccessful={config.DeleteAsyncOperationIfSuccessful}...");
                 _service.Update(step);
                 id = step.Id;
                 progress.Report("Updated processing step.");
+
+                // Verify the update was successful
+                var updated = _service.Retrieve("sdkmessageprocessingstep", id, new ColumnSet("asyncautodelete"));
+                var actualValue = updated.GetAttributeValue<bool>("asyncautodelete");
+                progress.Report($"Verified: AsyncAutoDelete is now {actualValue}");
             }
 
             return id;

@@ -1,6 +1,27 @@
+
 # Configuration Guide
 
+## Overview
+
+This guide covers all configuration options for CascadeFields, including best practices, UI behaviors, and advanced patterns. It reflects the latest features:
+
+- **Three left-pane tabs:**
+  - **Configuration:** Select solution and parent entity
+  - **Log:** See real-time status and troubleshooting info
+  - **JSON Preview:** Live JSON for your current configuration
+- **Checkboxes:**
+  - **Enable Detailed Tracing:** Enable for development, disable for production
+  - **Is Active:** Toggle to enable/disable cascading for this configuration
+- **Retrieve Configured Entity:**
+  - If only one parent entity is configured, it loads automatically
+  - If multiple, a selector dialog appears (selecting a child row highlights the parent)
+- **Changing Parent Entity:**
+  - Loads that parent's configuration and children
+  - If no children are configured, prompts to add a child relationship immediately
+
+
 ## Configuration Best Practices
+
 
 ### ✅ Recommended: Explicit Lookup Fields
 
@@ -44,6 +65,7 @@ Always use explicit lookup field names for reliability:
 3. Add condition for parent entity relationship
 4. Field name shown in editor
 
+
 ## Filter Criteria
 
 ### Syntax
@@ -81,6 +103,7 @@ field|operator|value;field2|operator2|value2
 "filterCriteria": "primarycontactid|notnull|null"
 ```
 
+
 ## Field Mappings
 
 ### Basic Mapping
@@ -115,6 +138,7 @@ The plugin automatically handles type conversions:
 - Lookup → Lookup
 - OptionSet → OptionSet
 - Money → Money
+
 
 ## Configuration Patterns
 
@@ -239,9 +263,11 @@ Only cascade when specific fields change, but copy all mapped fields:
 
 Cascade only triggers when `creditonhold` changes, but all three fields are copied.
 
-## Production Configuration
 
-### Disable Detailed Tracing
+## Production & UI Configuration
+
+
+### Disable Detailed Tracing (Checkbox)
 
 For production environments, disable verbose tracing:
 
@@ -256,7 +282,13 @@ For production environments, disable verbose tracing:
 
 **Note:** Error logging is always enabled regardless of this setting.
 
-### Configuration Validation
+
+### Configuration Validation & UI Guidance
+
+**UI Guidance:**
+- Use the left pane checkboxes to control tracing and activation
+- Use the right pane to add relationships, field mappings, and filters
+- When prompted to add a relationship (after selecting a parent with no children), follow the dialog to select a child entity
 
 Before deploying:
 
@@ -268,6 +300,7 @@ Before deploying:
 6. ✅ Test filter criteria in Advanced Find first
 7. ✅ At least one field mapping per related entity
 8. ✅ Test in non-production environment
+
 
 ## Performance Considerations
 
@@ -292,7 +325,19 @@ For large record sets (>1000 children):
 - 98% reduction in API calls vs. individual updates
 - Asynchronous processing prevents UI blocking
 
-## Troubleshooting
+
+## Troubleshooting & UI Tips
+
+### Retrieve Configured Entity
+
+- Use the toolbar button to load existing configurations
+- If only one parent is configured, it loads automatically
+- If multiple, a dialog appears—select a parent row (child row selection highlights parent)
+
+### Changing Parent Entity
+
+- Loads all configured children for that parent
+- If none, prompts to add a child relationship
 
 ### Plugin Doesn't Execute
 
@@ -326,6 +371,7 @@ For large record sets (>1000 children):
 - Check field names are correct (no typos)
 - Verify operator syntax (use `eq`, not `equals`)
 - Review trace logs for filter parsing errors
+
 
 ## Complete Example
 

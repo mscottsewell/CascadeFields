@@ -49,7 +49,7 @@ namespace CascadeFields.Configurator.ViewModels
         private SolutionItem? _selectedSolution;
         private EntityItem? _selectedParentEntity;
         private RelationshipTabViewModel? _selectedTab;
-        private bool _enableTracing = true;
+        private bool _enableTracing = false;
         private bool _isActive = true;
         private bool _hasChanges;
         private CascadeConfigurationModel? _lastPublishedConfiguration;
@@ -221,6 +221,26 @@ namespace CascadeFields.Configurator.ViewModels
             set
             {
                 if (SetProperty(ref _isActive, value))
+                {
+                    UpdateJsonPreview();
+                    ScheduleSave();
+                }
+            }
+        }
+
+        private bool _deleteAsyncOperationIfSuccessful = true;
+
+        /// <summary>
+        /// Whether successful async operations should be automatically deleted.
+        /// When true, the parent update step (async) will automatically delete its AsyncOperation record upon successful completion.
+        /// This helps prevent clutter in the System Jobs table. Only applies to the parent update step (asynchronous operations).
+        /// </summary>
+        public bool DeleteAsyncOperationIfSuccessful
+        {
+            get => _deleteAsyncOperationIfSuccessful;
+            set
+            {
+                if (SetProperty(ref _deleteAsyncOperationIfSuccessful, value))
                 {
                     UpdateJsonPreview();
                     ScheduleSave();
@@ -667,6 +687,12 @@ namespace CascadeFields.Configurator.ViewModels
             }
 
             ScheduleSave();
+
+            // If no relationships are configured for this parent, prompt to add one immediately
+            if (RelationshipTabs.Count == 0)
+            {
+                await AddRelationshipAsync(null);
+            }
         }
 
         #endregion
@@ -815,6 +841,7 @@ namespace CascadeFields.Configurator.ViewModels
                 // Apply global settings
                 EnableTracing = config.EnableTracing;
                 IsActive = config.IsActive;
+                DeleteAsyncOperationIfSuccessful = config.DeleteAsyncOperationIfSuccessful;
 
                 UpdateJsonPreview();
                 if (markAsPublished)
@@ -1302,6 +1329,7 @@ namespace CascadeFields.Configurator.ViewModels
                 ParentEntity = SelectedParentEntity.LogicalName,
                 IsActive = IsActive,
                 EnableTracing = EnableTracing,
+                DeleteAsyncOperationIfSuccessful = DeleteAsyncOperationIfSuccessful,
                 RelatedEntities = RelationshipTabs
                     .Where(t => t.SelectedRelationship != null)
                     .Select(t => t.ToRelatedEntityConfig())

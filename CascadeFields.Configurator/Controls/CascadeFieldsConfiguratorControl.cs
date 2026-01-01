@@ -71,7 +71,6 @@ namespace CascadeFields.Configurator.Controls
         {
             InitializeComponent();
             splitContainerMain.SizeChanged += (s, e) => SetMainSplitterDistance();
-            splitContainerRight.SizeChanged += (s, e) => SetRightSplitterDistance();
         }
 
         /// <summary>
@@ -139,7 +138,6 @@ namespace CascadeFields.Configurator.Controls
             base.OnLoad(e);
             EnsureInitialized();
             SetMainSplitterDistance();
-            SetRightSplitterDistance();
         }
 
         /// <summary>
@@ -341,21 +339,11 @@ namespace CascadeFields.Configurator.Controls
             if (splitContainerMain.Width <= 0)
                 return;
 
-            // Maintain roughly 40/60 split left/right
-            var target = (int)(splitContainerMain.Width * 0.4);
+            // Maintain roughly 30/70 split left/right
+            var target = (int)(splitContainerMain.Width * 0.3);
             splitContainerMain.SplitterDistance = Math.Max(200, target);
         }
 
-        private void SetRightSplitterDistance()
-        {
-            if (splitContainerRight.Height <= 0)
-                return;
-
-            // Keep bottom panel fixed at its minimum size (no extra padding)
-            var bottom = splitContainerRight.Panel2MinSize;
-            var distance = Math.Max(200, splitContainerRight.Height - bottom);
-            splitContainerRight.SplitterDistance = distance;
-        }
 
         /// <summary>
         /// Wires up UI events and handlers
@@ -459,6 +447,8 @@ namespace CascadeFields.Configurator.Controls
                     chkEnableTracing.Checked = _viewModel.EnableTracing;
                 if (e.PropertyName == nameof(ConfigurationViewModel.IsActive))
                     chkIsActive.Checked = _viewModel.IsActive;
+                if (e.PropertyName == nameof(ConfigurationViewModel.DeleteAsyncOperationIfSuccessful))
+                    chkDeleteAsyncOperationIfSuccessful.Checked = _viewModel.DeleteAsyncOperationIfSuccessful;
                 if (e.PropertyName == nameof(ConfigurationViewModel.IsBulkLoadingParentEntities) && !_viewModel.IsBulkLoadingParentEntities)
                 {
                     RefreshParentEntities();
@@ -534,6 +524,9 @@ namespace CascadeFields.Configurator.Controls
 
             chkIsActive.CheckedChanged -= ChkIsActive_CheckedChanged;
             chkIsActive.CheckedChanged += ChkIsActive_CheckedChanged;
+
+            chkDeleteAsyncOperationIfSuccessful.CheckedChanged -= ChkDeleteAsyncOperationIfSuccessful_CheckedChanged;
+            chkDeleteAsyncOperationIfSuccessful.CheckedChanged += ChkDeleteAsyncOperationIfSuccessful_CheckedChanged;
 
             // Initialize UI
             lblStatus.Text = _viewModel.StatusMessage;
@@ -865,6 +858,11 @@ namespace CascadeFields.Configurator.Controls
             if (_viewModel != null)
                 _viewModel.IsActive = chkIsActive.Checked;
         }
+        private void ChkDeleteAsyncOperationIfSuccessful_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (_viewModel != null)
+                _viewModel.DeleteAsyncOperationIfSuccessful = chkDeleteAsyncOperationIfSuccessful.Checked;
+        }
 
         /// <summary>
         /// Adds a tab page for a relationship
@@ -937,6 +935,22 @@ namespace CascadeFields.Configurator.Controls
                 {
                     MessageBox.Show("No configured entities found.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     return;
+                }
+
+                // If only one parent entity is configured, auto-load it without prompting
+                var singleParentGroup = configurations
+                    .GroupBy(c => c.ParentEntity, StringComparer.OrdinalIgnoreCase)
+                    .SingleOrDefault();
+
+                if (singleParentGroup != null)
+                {
+                    var first = singleParentGroup.First();
+                    if (!string.IsNullOrWhiteSpace(first.RawJson))
+                    {
+                        _viewModel.StatusMessage = $"Loading configuration for {first.ParentEntity}...";
+                        await _viewModel.ApplyConfigurationAsync(first.RawJson, markAsPublished: true);
+                        return;
+                    }
                 }
 
                 // Show picker dialog

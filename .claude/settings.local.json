@@ -11,7 +11,11 @@
       "Bash(ls:*)",
       "Bash(dotnet build:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git diff-tree:*)",
+      "Bash(powershell -Command \"& { $pluginPath = ''CascadeFields.Plugin''; $status = git status --porcelain -- $pluginPath; if \\($status\\) { Write-Host ''Has changes'' } else { Write-Host ''No changes'' } }\")",
+      "Bash(powershell -File pack-nuget.ps1:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

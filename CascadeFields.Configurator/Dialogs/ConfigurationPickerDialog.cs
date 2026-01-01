@@ -46,6 +46,8 @@ namespace CascadeFields.Configurator.Dialogs
         private readonly Button _okButton;
         private readonly Button _cancelButton;
         private readonly Dictionary<string, ParentEntityGroup> _parentGroups;
+        private readonly Dictionary<string, ListViewItem> _parentItems;
+        private bool _isAdjustingSelection;
 
         /// <summary>
         /// Gets the selected configuration, or null if the dialog was canceled.
@@ -69,6 +71,8 @@ namespace CascadeFields.Configurator.Dialogs
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
+
+            _parentItems = new Dictionary<string, ListViewItem>(StringComparer.OrdinalIgnoreCase);
 
             // Group configurations by parent entity
             _parentGroups = configurations
@@ -106,6 +110,7 @@ namespace CascadeFields.Configurator.Dialogs
             _listView.Columns.Add("Relationship Schema", 200);
 
             _listView.DoubleClick += (s, e) => { if (_listView.SelectedItems.Count > 0) HandleSelection(); };
+            _listView.ItemSelectionChanged += ListView_ItemSelectionChanged;
 
             // Populate list with a parent row, followed by its child relationship rows
             foreach (var group in _parentGroups.Values.OrderBy(g => g.ParentEntity))
@@ -119,6 +124,11 @@ namespace CascadeFields.Configurator.Dialogs
                 parentItem.SubItems.Add(string.Empty);
                 parentItem.SubItems.Add(string.Empty);
                 _listView.Items.Add(parentItem);
+
+                if (!_parentItems.ContainsKey(group.ParentEntity))
+                {
+                    _parentItems[group.ParentEntity] = parentItem;
+                }
 
                 // Child rows (informational, selection maps back to parent)
                 // Skip children without a relationship name to reduce noise; the parent row already represents them.
@@ -172,6 +182,34 @@ namespace CascadeFields.Configurator.Dialogs
 
             AcceptButton = _okButton;
             CancelButton = _cancelButton;
+        }
+
+        /// <summary>
+        /// Forces selection back to the parent row when a child row is clicked, so loading always targets the parent and all children.
+        /// </summary>
+        private void ListView_ItemSelectionChanged(object? sender, ListViewItemSelectionChangedEventArgs e)
+        {
+            if (_isAdjustingSelection)
+                return;
+
+            if (e.IsSelected && e.Item.Tag is RowTag tag && tag.IsChild)
+            {
+                if (_parentItems.TryGetValue(tag.Group.ParentEntity, out var parentItem))
+                {
+                    _isAdjustingSelection = true;
+                    try
+                    {
+                        _listView.SelectedItems.Clear();
+                        parentItem.Selected = true;
+                        parentItem.Focused = true;
+                        parentItem.EnsureVisible();
+                    }
+                    finally
+                    {
+                        _isAdjustingSelection = false;
+                    }
+                }
+            }
         }
 
         /// <summary>

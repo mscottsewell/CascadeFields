@@ -5,12 +5,14 @@ param(
     [switch]$SkipPush,
     [switch]$SkipDeploy,
     [switch]$SkipVersionBump,
+    [switch]$SkipPluginRebuildIfUnchanged,
     [string]$XrmToolBoxPluginsPath = "$env:APPDATA\MscrmTools\XrmToolBox\Plugins"
 )
 
 # Builds, packs, and optionally deploys the configurator + plugin payload.
 # When SkipVersionBump is set, the AssemblyInfo version is reused (helpful for CI repeatability).
 # SkipDeploy keeps artifacts local; SkipPush avoids pushing to NuGet.
+# SkipPluginRebuildIfUnchanged skips rebuilding the Plugin project if it has no git changes since last commit.
 
 $ErrorActionPreference = "Stop"
 
@@ -96,6 +98,51 @@ function Update-ConfiguratorVersion {
     return $nextVersionString
 }
 
+function Test-PluginHasChanges {
+    param(
+        [string]$PluginProjectDir
+    )
+
+    # Check if we're in a git repository
+    try {
+        $null = & git rev-parse --show-toplevel 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Not in a git repository; assuming Plugin has changes"
+            return $true
+        }
+    } catch {
+        Write-Warning "Git not available; assuming Plugin has changes"
+        return $true
+    }
+
+    # Get relative path from git root to plugin directory
+    $pluginPath = "CascadeFields.Plugin"
+
+    # Check for uncommitted changes in the Plugin directory
+    $status = & git status --porcelain -- $pluginPath 2>&1
+    if ($status) {
+        Write-Info "Plugin has uncommitted changes"
+        return $true
+    }
+
+    # Check if Plugin files were modified in the last commit
+    # This helps catch the case where changes were just committed
+    try {
+        $lastCommitFiles = & git diff-tree --no-commit-id --name-only -r HEAD -- $pluginPath 2>&1
+        if ($LASTEXITCODE -eq 0 -and $lastCommitFiles) {
+            Write-Info "Plugin was modified in the last commit"
+            return $true
+        }
+    } catch {
+        # If we can't determine, assume changes exist
+        Write-Warning "Could not check last commit; assuming Plugin has changes"
+        return $true
+    }
+
+    Write-Info "Plugin has no changes since last commit"
+    return $false
+}
+
 function Update-PluginFileVersion {
     param(
         [string]$AssemblyInfoPath
@@ -139,16 +186,34 @@ $assemblyInfoPath = Join-Path $projDir "Properties/AssemblyInfo.cs"
 $pluginProjDir = Join-Path $PSScriptRoot "CascadeFields.Plugin"
 $pluginAssemblyInfoPath = Join-Path $pluginProjDir "Properties/AssemblyInfo.cs"
 
+# Detect if Plugin has changes
+$pluginHasChanges = Test-PluginHasChanges -PluginProjectDir $pluginProjDir
+$skipPluginBuild = $SkipPluginRebuildIfUnchanged -and (-not $pluginHasChanges)
+
 if (-not $SkipVersionBump) {
     Update-ConfiguratorVersion -AssemblyInfoPath $assemblyInfoPath | Out-Null
-    Update-PluginFileVersion -AssemblyInfoPath $pluginAssemblyInfoPath | Out-Null
+
+    # Only increment Plugin version if it has changes
+    if ($pluginHasChanges) {
+        Update-PluginFileVersion -AssemblyInfoPath $pluginAssemblyInfoPath | Out-Null
+    } else {
+        Write-Info "Plugin unchanged; skipping version increment"
+    }
 } else {
     Write-Info "SkipVersionBump enabled; using existing AssemblyInfo version."
 }
 
 Write-Info "Restoring and building solution ($Configuration)..."
 & dotnet restore (Join-Path $PSScriptRoot "CascadeFields.sln")
-& dotnet build (Join-Path $PSScriptRoot "CascadeFields.sln") -c $Configuration
+
+if ($skipPluginBuild) {
+    Write-Info "Plugin unchanged; skipping Plugin build (using existing binaries)"
+    # Only build the Configurator project
+    & dotnet build (Join-Path $projDir "CascadeFields.Configurator.csproj") -c $Configuration
+} else {
+    # Build entire solution (includes Plugin)
+    & dotnet build (Join-Path $PSScriptRoot "CascadeFields.sln") -c $Configuration
+}
 
 $buildOutput = Join-Path $projDir "bin/$Configuration/net462"
 $assemblyPath = Join-Path $buildOutput "CascadeFields.Configurator.dll"

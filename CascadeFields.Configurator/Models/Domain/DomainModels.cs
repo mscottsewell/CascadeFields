@@ -83,7 +83,16 @@ namespace CascadeFields.Configurator.Models.Domain
         /// When true, the plugin writes detailed execution logs for debugging and monitoring.
         /// </summary>
         [JsonProperty("enableTracing")]
-        public bool EnableTracing { get; set; } = true;
+        public bool EnableTracing { get; set; } = false;
+
+        /// <summary>
+        /// Gets or sets a value indicating whether successful async operations should be automatically deleted.
+        /// When true, the parent update step (async) will automatically delete its AsyncOperation record upon successful completion.
+        /// This helps prevent clutter in the System Jobs table. Only applies to the parent update step (asynchronous operations).
+        /// Child steps run synchronously and are not affected by this setting.
+        /// </summary>
+        [JsonProperty("deleteAsyncOperationIfSuccessful")]
+        public bool DeleteAsyncOperationIfSuccessful { get; set; } = true;
 
         /// <summary>
         /// Gets or sets the collection of related entity configurations.
