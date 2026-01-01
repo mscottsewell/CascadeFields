@@ -143,8 +143,11 @@ To load an existing configuration:
 
 Plugin trace logs are your best tool for debugging and understanding what CascadeFields is doing.
 
+> **Important (Org Setting Required):** The Configurator's **Enable Detailed Tracing** checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view trace logs, your Dataverse environment must have **Plug-in trace log** enabled (recommended while troubleshooting: **All**).
+
 1. In your Dataverse environment, navigate to:
-   - **Settings** → **Customizations** → **Plug-in Trace Log**
+   - **Modern**: Power Platform admin center → Environments → (your environment) → Settings → Plug-in trace log / Plug-in trace logs
+   - **Classic (legacy UI)**: **Settings** → **Customizations** → **Plug-in Trace Log**
    - Or search for "Plugin Trace Log" in the search bar
 2. Filter the view:
    - **Type Name** contains `CascadeFieldsPlugin`
@@ -162,7 +165,8 @@ For more detailed logs during testing:
 1. Open your configuration in the Configurator
 2. Check the **Enable Detailed Tracing** checkbox in the Configuration tab
 3. Click **Publish Configuration and Plug-in** to apply the change
-4. **⚠️ Important:** Do not leave detailed tracing enabled in production environments as it impacts performance and creates excessive log records
+4. This enables verbose `INFO/WARNING/DEBUG` logs for the plug-in. `ERROR` logs are always written, but may only be stored depending on your environment’s **Plug-in trace log** setting.
+5. **⚠️ Important:** Do not leave detailed tracing enabled in production environments as it impacts performance and creates excessive log records
 
 **Check System Jobs (for parent updates):**
 

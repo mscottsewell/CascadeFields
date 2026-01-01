@@ -10,8 +10,9 @@ This guide covers all configuration options for CascadeFields, including best pr
   - **Log:** See real-time status and troubleshooting info
   - **JSON Preview:** Live JSON for your current configuration
 - **Checkboxes:**
-  - **Enable Detailed Tracing:** Enable for development, disable for production
   - **Is Active:** Toggle to enable/disable cascading for this configuration
+  - **Auto-delete Successful System Jobs:** When enabled, successful async System Jobs created by the parent step are automatically deleted to prevent clutter
+  - **Enable Detailed Tracing:** Controls how much the plug-in writes to Dataverse tracing (`ITracingService`). Enable for development, disable for production
 - **Retrieve Configured Entity:**
   - If only one parent entity is configured, it loads automatically
   - If multiple, a selector dialog appears (selecting a child row highlights the parent)
@@ -43,6 +44,7 @@ Always use explicit lookup field names for reliability:
 ```
 
 **Benefits:**
+
 - ✅ Works with parent updates, child creates, and child relinks
 - ✅ No metadata lookups needed
 - ✅ Better performance
@@ -52,7 +54,7 @@ Always use explicit lookup field names for reliability:
 ### Common Lookup Field Names
 
 | Parent Entity | Child Entity | Lookup Field |
-|---------------|--------------|--------------|
+| ------------- | ------------ | ------------ |
 | account | contact | `parentcustomerid` |
 | account | opportunity | `accountid` or `parentaccountid` |
 | contact | contact | `parentcontactid` |
@@ -60,6 +62,7 @@ Always use explicit lookup field names for reliability:
 | opportunity | opportunityproduct | `opportunityid` |
 
 **Tip:** To find lookup field names:
+
 1. Open Advanced Find
 2. Select child entity
 3. Add condition for parent entity relationship
@@ -77,7 +80,7 @@ field|operator|value;field2|operator2|value2
 ### Supported Operators
 
 | Operator | Aliases | Description |
-|----------|---------|-------------|
+| -------- | ------- | ----------- |
 | `eq` | `equal`, `=` | Equal to |
 | `ne` | `notequal`, `!=` | Not equal to |
 | `gt` | `greaterthan`, `>` | Greater than |
@@ -89,16 +92,19 @@ field|operator|value;field2|operator2|value2
 ### Examples
 
 **Active records only:**
+
 ```json
 "filterCriteria": "statecode|eq|0"
 ```
 
 **Multiple conditions:**
+
 ```json
 "filterCriteria": "statecode|eq|0;revenue|gt|50000"
 ```
 
 **Check for null:**
+
 ```json
 "filterCriteria": "primarycontactid|notnull|null"
 ```
@@ -127,11 +133,13 @@ field|operator|value;field2|operator2|value2
 The plugin automatically handles type conversions:
 
 **Lookup/OptionSet → Text:**
+
 - Lookup: Uses display name (or formatted value, or ID as fallback)
 - OptionSet: Uses label text (or numeric value as fallback)
 - Automatically truncates if target field is too short
 
 **Same-Type Mappings:**
+
 - Text → Text
 - Number → Number
 - DateTime → DateTime
@@ -286,6 +294,7 @@ For production environments, disable verbose tracing:
 ### Configuration Validation & UI Guidance
 
 **UI Guidance:**
+
 - Use the left pane checkboxes to control tracing and activation
 - Use the right pane to add relationships, field mappings, and filters
 - When prompted to add a relationship (after selecting a parent with no children), follow the dialog to select a child entity
@@ -315,12 +324,15 @@ Before deploying:
 
 Check execution time in trace logs:
 
+> **Note (Org Setting Required):** To capture and view Dataverse plug-in traces, your environment must have **Plug-in trace log** enabled. If set to **Off**, nothing is stored. If set to **Exception**, logs are stored only when the plug-in throws. Use **All** while troubleshooting. You can configure this in the **Power Platform admin center**: Environments → (your environment) → Settings → Plug-in trace log.
+
 ```text
 [INFO] Update complete: 150 successful, 0 failed
 [INFO] === Plugin Execution Completed Successfully === [+1250ms]
 ```
 
 For large record sets (>1000 children):
+
 - Execution time typically 2-5 seconds
 - 98% reduction in API calls vs. individual updates
 - Asynchronous processing prevents UI blocking
@@ -342,11 +354,13 @@ For large record sets (>1000 children):
 ### Plugin Doesn't Execute
 
 **Parent Update:**
+
 - Check filtering attributes include trigger fields
 - Verify `statecode` filter matches child records
 - Ensure parent record has related children
 
 **Child Create/Update:**
+
 - Verify `lookupFieldName` is specified and correct
 - Check if child step is registered (look for "Child Create" and "Child Relink" steps)
 - Ensure lookup field is populated on create or changed on update
@@ -416,6 +430,7 @@ For large record sets (>1000 children):
 ```
 
 This configuration:
+
 - Cascades when city or state changes
 - Copies all four fields when triggered
 - Only updates active contacts

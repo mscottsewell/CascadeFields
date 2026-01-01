@@ -287,6 +287,8 @@ Below these controls are three important checkboxes:
 | **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent clutter. Only applies to parent step since child steps run synchronously. | Leave checked to keep System Jobs clean. Uncheck to monitor successful jobs. |
 | **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. | ✅ Enable during development and testing. ⚠️ **Disable in production** to reduce log volume and improve performance. |
 
+> **Note (Org Setting Required):** This checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have **Plug-in trace log** enabled (see “Plugin Trace Logs” below).
+
 **Right Pane - Relationship Configuration:**
 
 The right pane displays tabs for each configured child relationship. Each tab contains:
@@ -367,9 +369,22 @@ The Configurator includes built-in diagnostics:
 
 For detailed execution information:
 
-1. Go to **Settings** → **Plug-in Trace Log** in Dataverse
-2. Filter by plugin name: `CascadeFields.Plugin`
-3. Review execution details and timing
+1. Ensure your environment has **Plug-in trace log** enabled:
+   - **Off**: no trace logs are stored
+   - **Exception**: logs are stored only when the plug-in throws an exception
+   - **All**: logs are stored for all executions (recommended while troubleshooting)
+1. Enable **Enable Detailed Tracing** in the Configurator for verbose `INFO/WARNING/DEBUG` logs (errors are always written).
+1. View trace logs in Dataverse:
+   - **Modern**: Power Platform admin center → Environments → (your environment) → Settings → Plug-in trace log / Plug-in trace logs
+   - **Classic (legacy UI)**: **Settings** → **Plug-in Trace Log** in Dataverse
+1. Filter by plugin name: `CascadeFields.Plugin`
+1. Review execution details and timing
+
+**Where logs appear:**
+
+- **Configurator Log tab**: local, real-time UI log from the Configurator (useful while publishing/configuring)
+- **Dataverse Plug-in Trace Log**: server-side execution traces emitted via `ITracingService` (what “Enable Detailed Tracing” affects)
+- **System Jobs**: only for async executions (Parent Update step). Helpful to confirm success/failure and timing.
 
 ### Common Issues
 
