@@ -186,6 +186,8 @@ namespace CascadeFields.Configurator.Controls
             });
 
             _grid.CellValueChanged += Grid_CellValueChanged;
+            _grid.CurrentCellDirtyStateChanged += Grid_CurrentCellDirtyStateChanged;
+            _grid.CellEnter += Grid_CellEnter;
             _grid.UserDeletedRow += Grid_UserDeletedRow;
             _grid.KeyDown += Grid_KeyDown;
             _grid.DataError += (s, e) => { e.ThrowException = false; };
@@ -252,8 +254,86 @@ namespace CascadeFields.Configurator.Controls
         }
 
         /// <summary>
-        /// Handles cell value changes
+        /// Auto-selects the first item when entering an empty combo box cell.
+        /// This improves UX by making the visually displayed first item actually selected.
         /// </summary>
+        private void Grid_CellEnter(object? sender, DataGridViewCellEventArgs e)
+        {
+            if (_grid == null)
+                return;
+
+            // Only handle combo box columns
+            var columnName = _grid.Columns[e.ColumnIndex]?.Name;
+            if (columnName != "Field" && columnName != "Operator")
+                return;
+
+            // Check if cell is empty
+            var currentValue = _grid[e.ColumnIndex, e.RowIndex]?.Value;
+            if (currentValue != null && !string.IsNullOrEmpty(currentValue.ToString()))
+                return;
+
+            // Get the combo box column
+            var comboColumn = _grid.Columns[e.ColumnIndex] as DataGridViewComboBoxColumn;
+            if (comboColumn?.DataSource == null)
+                return;
+
+            // Auto-select the first item if available
+            object? firstValue = null;
+
+            if (columnName == "Field")
+            {
+                var items = comboColumn.DataSource as System.Collections.Generic.List<AttributeItem>;
+                if (items != null && items.Count > 0)
+                {
+                    firstValue = items[0].LogicalName;
+                }
+            }
+            else if (columnName == "Operator")
+            {
+                var items = comboColumn.DataSource as System.Collections.Generic.List<FilterOperator>;
+                if (items != null && items.Count > 0)
+                {
+                    firstValue = items[0].Code;
+                }
+            }
+
+            if (firstValue != null)
+            {
+                _grid[e.ColumnIndex, e.RowIndex].Value = firstValue;
+
+                // Commit the value immediately
+                if (_grid.CurrentCell != null && _grid.CurrentCell.ColumnIndex == e.ColumnIndex &&
+                    _grid.CurrentCell.RowIndex == e.RowIndex)
+                {
+                    _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Forces cell to commit changes immediately when user moves to next cell.
+        /// This ensures values are saved before grid state changes.
+        /// </summary>
+        private void Grid_CurrentCellDirtyStateChanged(object? sender, EventArgs e)
+        {
+            if (_grid == null || _grid.CurrentCell == null || !_grid.IsCurrentCellDirty)
+                return;
+
+            try
+            {
+                // Commit changes immediately for combo box columns to ensure value is saved
+                var columnName = _grid.CurrentCell?.OwningColumn?.Name;
+                if (columnName == "Field" || columnName == "Operator")
+                {
+                    _grid.CommitEdit(DataGridViewDataErrorContexts.Commit);
+                }
+            }
+            catch (Exception)
+            {
+                // Ignore commit errors - DataError event will handle any issues
+            }
+        }
+
         /// <summary>
         /// Handles cell value changes
         /// </summary>
