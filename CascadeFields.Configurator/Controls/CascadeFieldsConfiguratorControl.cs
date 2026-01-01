@@ -938,13 +938,15 @@ namespace CascadeFields.Configurator.Controls
                 }
 
                 // If only one parent entity is configured, auto-load it without prompting
-                var singleParentGroup = configurations
+                var parentGroups = configurations
                     .GroupBy(c => c.ParentEntity, StringComparer.OrdinalIgnoreCase)
-                    .SingleOrDefault();
+                    .ToList();
 
-                if (singleParentGroup != null)
+                AppendLog($"Retrieve Configured Entity: found {parentGroups.Count} configured parent {(parentGroups.Count == 1 ? "entity" : "entities")}.");
+
+                if (parentGroups.Count == 1)
                 {
-                    var first = singleParentGroup.First();
+                    var first = parentGroups[0].First();
                     if (!string.IsNullOrWhiteSpace(first.RawJson))
                     {
                         _viewModel.StatusMessage = $"Loading configuration for {first.ParentEntity}...";
