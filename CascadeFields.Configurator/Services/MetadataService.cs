@@ -333,8 +333,24 @@ namespace CascadeFields.Configurator.Services
         }
 
         /// <summary>
-        /// Builds attribute items, optionally restricted to a set of form fields.
+        /// Builds a collection of attribute items from entity metadata, with optional filtering by form fields.
         /// </summary>
+        /// <param name="entity">The entity metadata containing attributes to convert.</param>
+        /// <param name="formFields">Optional set of form field logical names to filter by. If null or empty, all attributes are included.</param>
+        /// <param name="includeReadOnly">If true, includes read-only attributes. Default is false.</param>
+        /// <param name="includeLogical">If true, includes logical attributes (calculated, rollup). Default is false.</param>
+        /// <returns>An enumerable collection of attribute items sorted by display name.</returns>
+        /// <remarks>
+        /// <para><b>Filtering Logic:</b></para>
+        /// <list type="number">
+        ///     <item><description>Excludes logical attributes unless includeLogical is true</description></item>
+        ///     <item><description>Excludes read-only attributes (IsValidForUpdate=false) unless includeReadOnly is true</description></item>
+        ///     <item><description>If formFields is provided, only includes attributes in that set</description></item>
+        /// </list>
+        ///
+        /// <para><b>Usage:</b></para>
+        /// Used to populate field selection controls with form-specific attributes or all writable attributes.
+        /// </remarks>
         public IEnumerable<AttributeItem> GetAttributeItems(EntityMetadata entity, HashSet<string>? formFields = null, bool includeReadOnly = false, bool includeLogical = false)
         {
             if (entity?.Attributes == null)
@@ -359,8 +375,28 @@ namespace CascadeFields.Configurator.Services
         }
 
         /// <summary>
-        /// Builds attribute items for filtering, always including state/status even if not on the form.
+        /// Builds attribute items specifically for filter criteria selection, always including state and status fields.
         /// </summary>
+        /// <param name="entity">The entity metadata containing attributes to convert.</param>
+        /// <param name="formFields">Optional set of form field logical names. State and status are always included regardless.</param>
+        /// <returns>An enumerable collection of attribute items suitable for filter criteria, sorted by display name.</returns>
+        /// <remarks>
+        /// <para><b>Special Handling:</b></para>
+        /// Unlike <see cref="GetAttributeItems"/>, this method always includes statecode and statuscode
+        /// attributes even if they're not in the formFields set. This ensures users can always filter by record state.
+        ///
+        /// <para><b>Filtering Logic:</b></para>
+        /// <list type="bullet">
+        ///     <item><description>Only includes attributes valid for update</description></item>
+        ///     <item><description>Excludes logical attributes</description></item>
+        ///     <item><description>Always includes statecode and statuscode</description></item>
+        ///     <item><description>If formFields provided, includes attributes in that set plus state/status</description></item>
+        /// </list>
+        ///
+        /// <para><b>Usage:</b></para>
+        /// Used to populate filter field dropdowns in filter criteria builders, ensuring common filter
+        /// fields like state/status are always available.
+        /// </remarks>
         public IEnumerable<AttributeItem> GetFilterAttributeItems(EntityMetadata entity, HashSet<string>? formFields = null)
         {
             if (entity?.Attributes == null)
@@ -385,8 +421,34 @@ namespace CascadeFields.Configurator.Services
         }
 
         /// <summary>
-        /// Builds a list of child relationship items for display, including friendly names for entities and lookup attributes.
+        /// Builds a list of child relationship items for display, resolving friendly names from metadata.
         /// </summary>
+        /// <param name="parent">The parent entity metadata containing OneToManyRelationships.</param>
+        /// <param name="allEntities">The collection of all available entities (typically from a solution) to resolve child entity metadata.</param>
+        /// <returns>An enumerable collection of relationship items sorted by display name and referencing attribute.</returns>
+        /// <remarks>
+        /// <para><b>Filtering Logic:</b></para>
+        /// <list type="bullet">
+        ///     <item><description>Only includes one-to-many relationships where this entity is the parent</description></item>
+        ///     <item><description>Filters to relationships where the child entity exists in allEntities</description></item>
+        ///     <item><description>Resolves display names from child entity and attribute metadata</description></item>
+        /// </list>
+        ///
+        /// <para><b>Display Name Resolution:</b></para>
+        /// For each relationship, attempts to resolve:
+        /// <list type="bullet">
+        ///     <item><description>Child entity display name from metadata</description></item>
+        ///     <item><description>Lookup field display name from child entity attribute metadata</description></item>
+        /// </list>
+        /// Falls back to logical names if display names are not available.
+        ///
+        /// <para><b>No Grouping:</b></para>
+        /// Intentionally does not group relationships. If multiple relationships exist between the same
+        /// two entities (e.g., Account -> Contact via multiple lookup fields), all are returned separately.
+        ///
+        /// <para><b>Usage:</b></para>
+        /// Used to populate relationship picker dialogs with all possible parent-child relationships.
+        /// </remarks>
         public IEnumerable<RelationshipItem> GetChildRelationships(EntityMetadata parent, IReadOnlyCollection<EntityMetadata> allEntities)
         {
             if (parent?.OneToManyRelationships == null)
@@ -447,8 +509,27 @@ namespace CascadeFields.Configurator.Services
         }
 
         /// <summary>
-        /// Parses Dataverse form XML to extract bound field logical names.
+        /// Parses Dataverse form XML to extract the logical names of all bound fields.
         /// </summary>
+        /// <param name="formXml">The XML content of a Dataverse form definition.</param>
+        /// <returns>A case-insensitive hash set of field logical names found in the form.</returns>
+        /// <remarks>
+        /// <para><b>Purpose:</b></para>
+        /// Extracts field logical names from form XML to filter attribute lists to only show fields
+        /// that are visible on the form. This helps users focus on relevant fields when building
+        /// cascade configurations.
+        ///
+        /// <para><b>Parsing Logic:</b></para>
+        /// Searches for all control elements with a "datafieldname" attribute and extracts the value.
+        /// Handles malformed XML gracefully by returning an empty set on parse errors.
+        ///
+        /// <para><b>Usage:</b></para>
+        /// Used to limit field selection dropdowns to form-specific fields, improving usability
+        /// by hiding irrelevant system or hidden fields.
+        ///
+        /// <para><b>Error Handling:</b></para>
+        /// Returns an empty hash set if formXml is null, empty, or malformed. Does not throw exceptions.
+        /// </remarks>
         public HashSet<string> GetFieldsFromFormXml(string formXml)
         {
             var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

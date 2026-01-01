@@ -10,8 +10,41 @@ using CascadeFields.Configurator.Models.UI;
 namespace CascadeFields.Configurator.Controls
 {
     /// <summary>
-    /// Legacy filter editor used by the older UI; kept for backward compatibility and quick edits.
+    /// User control for editing filter criteria in a data grid format.
     /// </summary>
+    /// <remarks>
+    /// <para><strong>Purpose:</strong></para>
+    /// <para>
+    /// Provides a grid-based interface for defining filter conditions on child entity records.
+    /// Filters are used to determine which child records should be affected by cascade operations.
+    /// </para>
+    ///
+    /// <para><strong>Filter Format:</strong></para>
+    /// <para>
+    /// Each filter row consists of three components:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>Field: The attribute to filter on (dropdown from available child entity attributes)</description></item>
+    /// <item><description>Operator: Comparison operator (eq, ne, gt, lt, null, notnull, etc.)</description></item>
+    /// <item><description>Value: The value to compare against (disabled for null/notnull operators)</description></item>
+    /// </list>
+    ///
+    /// <para><strong>Features:</strong></para>
+    /// <list type="bullet">
+    /// <item><description>Automatic row addition when the last row is populated</description></item>
+    /// <item><description>Per-row delete buttons for easy removal</description></item>
+    /// <item><description>Add and Clear buttons for bulk operations</description></item>
+    /// <item><description>Custom dropdown styling with owner-drawn combo boxes</description></item>
+    /// <item><description>Automatic value cell disabling for null operators</description></item>
+    /// <item><description>FilterChanged event for real-time validation and preview</description></item>
+    /// </list>
+    ///
+    /// <para><strong>String Serialization:</strong></para>
+    /// <para>
+    /// Filters are serialized to/from a string format: "field1|op1|value1;field2|op2|value2"
+    /// This format is stored in the JSON configuration and passed to the plugin.
+    /// </para>
+    /// </remarks>
     public partial class FilterCriteriaControl : UserControl
     {
         private readonly BindingList<FilterRow> _filterRows = new();
@@ -19,8 +52,18 @@ namespace CascadeFields.Configurator.Controls
         private List<AttributeItem> _availableFields = new();
         private bool _isUpdating = false;
 
+        /// <summary>
+        /// Occurs when the filter criteria collection changes.
+        /// </summary>
+        /// <remarks>
+        /// Raised after cell edits, row additions, or row deletions to notify parent controls
+        /// that the filter configuration has changed and may need validation or JSON regeneration.
+        /// </remarks>
         public event EventHandler? FilterChanged;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="FilterCriteriaControl"/> class.
+        /// </summary>
         public FilterCriteriaControl()
         {
             InitializeComponent();
@@ -340,6 +383,15 @@ namespace CascadeFields.Configurator.Controls
             }
         }
 
+        /// <summary>
+        /// Sets the list of available attributes for the field dropdown.
+        /// </summary>
+        /// <param name="fields">The list of child entity attributes to make available for filtering.</param>
+        /// <remarks>
+        /// This method should be called whenever the child entity changes to populate the
+        /// field dropdowns with appropriate attributes. Refreshes all existing field dropdowns
+        /// while preserving currently selected values if they remain valid.
+        /// </remarks>
         public void SetAvailableFields(List<AttributeItem> fields)
         {
             _availableFields = fields ?? new();
@@ -374,16 +426,30 @@ namespace CascadeFields.Configurator.Controls
             }
         }
 
+        /// <summary>
+        /// Adds a new blank filter row to the grid.
+        /// </summary>
+        /// <remarks>
+        /// Called when the user clicks the Add Filter button. The new row is added to the end
+        /// of the filter list and is ready for immediate editing.
+        /// </remarks>
         public void AddFilter()
         {
             _filterRows.Add(new FilterRow());
         }
 
+        /// <summary>
+        /// Removes all filter rows and adds a single blank row.
+        /// </summary>
+        /// <remarks>
+        /// Resets the filter grid to its initial state with one empty row.
+        /// Initializes operator dropdowns and value cell states for the new row.
+        /// </remarks>
         public void ClearFilters()
         {
             _filterRows.Clear();
             _filterRows.Add(new FilterRow());
-            
+
             // Ensure operator dropdown and value cell state are initialized for the new blank row
             if (gridFilters.Rows.Count > 0)
             {
@@ -442,6 +508,16 @@ namespace CascadeFields.Configurator.Controls
         }
         */
 
+        /// <summary>
+        /// Gets the list of valid filter criteria from the grid.
+        /// </summary>
+        /// <returns>
+        /// A list of <see cref="SavedFilterCriteria"/> objects representing all rows that have
+        /// at least a field and operator specified.
+        /// </returns>
+        /// <remarks>
+        /// Blank rows and rows with missing required fields are excluded from the result.
+        /// </remarks>
         public List<SavedFilterCriteria> GetFilters()
         {
             return _filterRows
@@ -456,6 +532,21 @@ namespace CascadeFields.Configurator.Controls
                 .ToList();
         }
 
+        /// <summary>
+        /// Serializes the filter criteria to the pipe-and-semicolon string format.
+        /// </summary>
+        /// <returns>
+        /// A string in the format "field1|op1|value1;field2|op2|value2" or empty string if no valid filters exist.
+        /// </returns>
+        /// <remarks>
+        /// <para>
+        /// This format is used in the JSON configuration and passed to the plugin for execution.
+        /// </para>
+        /// <para>
+        /// Special handling for null operators: The value component is set to "null" as a
+        /// placeholder since null/notnull operators don't require a comparison value.
+        /// </para>
+        /// </remarks>
         public string GetFilterString()
         {
             var filters = GetFilters();
@@ -465,7 +556,7 @@ namespace CascadeFields.Configurator.Controls
             return string.Join(";", filters.Select(f =>
             {
                 var parts = new List<string> { f.Field ?? string.Empty, f.Operator ?? string.Empty };
-                
+
                 // null/notnull operators don't need a value
                 if (f.Operator != "null" && f.Operator != "notnull")
                 {
@@ -481,6 +572,22 @@ namespace CascadeFields.Configurator.Controls
             }));
         }
 
+        /// <summary>
+        /// Loads filter criteria from the pipe-and-semicolon string format.
+        /// </summary>
+        /// <param name="filterString">
+        /// The filter string in the format "field1|op1|value1;field2|op2|value2" or null/empty to clear filters.
+        /// </param>
+        /// <remarks>
+        /// <para>
+        /// Clears existing filters and populates the grid with the parsed filter rows.
+        /// Ensures at least one blank row exists after loading.
+        /// </para>
+        /// <para>
+        /// Each filter segment is separated by semicolons, and each field/operator/value is
+        /// separated by pipes.
+        /// </para>
+        /// </remarks>
         public void LoadFromFilterString(string? filterString)
         {
             _filterRows.Clear();
@@ -516,6 +623,13 @@ namespace CascadeFields.Configurator.Controls
             }
         }
 
+        /// <summary>
+        /// Raises the <see cref="FilterChanged"/> event.
+        /// </summary>
+        /// <remarks>
+        /// Called after any modification to the filter criteria (cell edits, additions, deletions).
+        /// Allows parent controls to respond to filter changes for validation or JSON updates.
+        /// </remarks>
         protected virtual void OnFilterChanged()
         {
             FilterChanged?.Invoke(this, EventArgs.Empty);

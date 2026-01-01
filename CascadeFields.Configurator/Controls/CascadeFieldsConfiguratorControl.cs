@@ -16,9 +16,41 @@ using XrmToolBox.Extensibility;
 namespace CascadeFields.Configurator.Controls
 {
     /// <summary>
-    /// Main configuration control - MVVM based
-    /// Wires ViewModel to UI without WPF binding (Windows Forms)
+    /// Main XrmToolBox plugin control for configuring CascadeFields cascade operations.
     /// </summary>
+    /// <remarks>
+    /// <para><strong>Architecture:</strong></para>
+    /// <para>
+    /// This control implements an MVVM (Model-View-ViewModel) architecture adapted for Windows Forms.
+    /// It hosts a <see cref="ConfigurationViewModel"/> and manually wires property changes to UI updates,
+    /// providing a clean separation between business logic and presentation.
+    /// </para>
+    ///
+    /// <para><strong>Main Components:</strong></para>
+    /// <list type="bullet">
+    /// <item><description><see cref="ConfigurationViewModel"/> - Core business logic and state management</description></item>
+    /// <item><description>Solution and Entity Selection - Dropdown combos for scope selection</description></item>
+    /// <item><description>Relationship Tabs - Dynamic tab control showing configured child relationships</description></item>
+    /// <item><description>JSON Preview - Read-only text box displaying generated configuration</description></item>
+    /// <item><description>Loading Overlay - Progress dialog for long-running operations</description></item>
+    /// </list>
+    ///
+    /// <para><strong>Lifecycle:</strong></para>
+    /// <list type="number">
+    /// <item><description>Control is instantiated by XrmToolBox when the plugin is opened</description></item>
+    /// <item><description>Initialize() is called on connection to create services and ViewModel</description></item>
+    /// <item><description>ViewModel attempts to restore previous session for the connection</description></item>
+    /// <item><description>User configures relationships, field mappings, and filters</description></item>
+    /// <item><description>On Publish, configuration is validated and pushed to Dataverse as plugin steps</description></item>
+    /// <item><description>Session is auto-saved on changes for restoration on next load</description></item>
+    /// </list>
+    ///
+    /// <para><strong>Threading:</strong></para>
+    /// <para>
+    /// All Dataverse operations run asynchronously to prevent UI blocking. Progress is reported
+    /// via the loading overlay with status messages and optional progress bars.
+    /// </para>
+    /// </remarks>
     public partial class CascadeFieldsConfiguratorControl : PluginControlBase
     {
         private ConfigurationViewModel? _viewModel;
@@ -28,6 +60,13 @@ namespace CascadeFields.Configurator.Controls
         private ProgressBar? _loadingProgress;
         private System.Windows.Forms.Label? _loadingLabel;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="CascadeFieldsConfiguratorControl"/> class.
+        /// </summary>
+        /// <remarks>
+        /// Sets up the designer-generated controls and configures split container resize handlers
+        /// to maintain consistent layout proportions.
+        /// </remarks>
         public CascadeFieldsConfiguratorControl()
         {
             InitializeComponent();
@@ -36,8 +75,23 @@ namespace CascadeFields.Configurator.Controls
         }
 
         /// <summary>
-        /// Initializes the control with services and ViewModel
+        /// Initializes the control with Dataverse services and creates the ViewModel.
         /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This method is called after a connection to Dataverse is established. It:
+        /// </para>
+        /// <list type="bullet">
+        /// <item><description>Creates service instances (<see cref="MetadataService"/>, <see cref="ConfigurationService"/>, <see cref="SettingsRepository"/>)</description></item>
+        /// <item><description>Instantiates the <see cref="ConfigurationViewModel"/> with dependency injection</description></item>
+        /// <item><description>Initializes the ViewModel which attempts to restore the previous session</description></item>
+        /// <item><description>Wires up property change handlers for manual databinding</description></item>
+        /// <item><description>Syncs the UI to match the restored ViewModel state</description></item>
+        /// </list>
+        /// <para>
+        /// If already initialized, this method returns immediately (idempotent).
+        /// </para>
+        /// </remarks>
         public void Initialize()
         {
             if (_viewModel != null)
@@ -421,6 +475,8 @@ namespace CascadeFields.Configurator.Controls
                     {
                         HideLoadingOverlay();
                     }
+                    // Update button states when loading state changes
+                    UpdateButtonStates();
                 }
 
                 if (e.PropertyName == nameof(ConfigurationViewModel.LoadingProgressCurrent)
@@ -441,6 +497,15 @@ namespace CascadeFields.Configurator.Controls
                     {
                         SyncUiFromViewModel();
                     }
+                    // Update button states when parent entity changes
+                    UpdateButtonStates();
+                }
+
+                // Update button states when SelectedTab or CanPublish changes
+                if (e.PropertyName == nameof(ConfigurationViewModel.SelectedTab) ||
+                    e.PropertyName == nameof(ConfigurationViewModel.CanPublish))
+                {
+                    UpdateButtonStates();
                 }
             };
 
@@ -472,6 +537,9 @@ namespace CascadeFields.Configurator.Controls
 
             // Initialize UI
             lblStatus.Text = _viewModel.StatusMessage;
+
+            // Set initial button states
+            UpdateButtonStates();
         }
 
         private static void RebindCombo(ComboBox combo, object data, string displayMember)
@@ -764,6 +832,26 @@ namespace CascadeFields.Configurator.Controls
 
             return "Publishing is currently blocked.";
         }
+        /// <summary>
+        /// Updates the enabled state of ribbon buttons based on the current configuration state.
+        /// Export JSON, Add Relationship, Remove Relationship, and Publish buttons are disabled
+        /// when no parent entity is selected.
+        /// </summary>
+        private void UpdateButtonStates()
+        {
+            if (_viewModel == null)
+                return;
+
+            // Determine if parent entity is selected
+            bool hasParentEntity = _viewModel.SelectedParentEntity != null;
+
+            // Enable/disable buttons based on parent entity selection
+            btnExportJson.Enabled = hasParentEntity;
+            btnAddChildRelationship.Enabled = hasParentEntity && !_viewModel.IsLoading;
+            btnRemoveRelationship.Enabled = hasParentEntity && _viewModel.SelectedTab != null;
+            btnPublish.Enabled = hasParentEntity && _viewModel.CanPublish;
+        }
+
         private void BtnExportJson_Click(object? sender, EventArgs e) => ExportJson();
         private async void BtnImportJson_Click(object? sender, EventArgs e) => await ImportJsonAsync();
         private async void BtnRetrieveConfigured_Click(object? sender, EventArgs e) => await RetrieveConfiguredEntityAsync();

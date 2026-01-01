@@ -7,16 +7,45 @@ using CascadeFields.Configurator.Models.UI;
 namespace CascadeFields.Configurator.Dialogs
 {
     /// <summary>
-    /// Dialog that lists available relationships to add for the selected parent entity.
+    /// Modal dialog for selecting an available child relationship to add to the cascade configuration.
     /// </summary>
+    /// <remarks>
+    /// <para><strong>Purpose:</strong></para>
+    /// <para>
+    /// Presents a filteredlist of relationships that can be added to the current parent entity's
+    /// cascade configuration. Only shows relationships that are not already configured.
+    /// </para>
+    ///
+    /// <para><strong>UI Features:</strong></para>
+    /// <list type="bullet">
+    /// <item><description>Three-column grid: Entity Name, Lookup Field, Relationship Schema Name</description></item>
+    /// <item><description>Full-row selection with fill sizing</description></item>
+    /// <item><description>Double-click to select and close</description></item>
+    /// <item><description>Displays both display names and logical names for clarity</description></item>
+    /// <item><description>Sorted by entity name for easier browsing</description></item>
+    /// </list>
+    ///
+    /// <para><strong>Data Format:</strong></para>
+    /// <para>
+    /// Entity names and lookup fields are shown as "DisplayName (LogicalName)" when display
+    /// names are available, otherwise just the logical name.
+    /// </para>
+    /// </remarks>
     internal class RelationshipPickerDialog : Form
     {
         private readonly DataGridView _grid;
         private readonly Button _okButton;
         private readonly Button _cancelButton;
 
+        /// <summary>
+        /// Gets the relationship selected by the user, or null if canceled.
+        /// </summary>
         public RelationshipItem? SelectedRelationship { get; private set; }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="RelationshipPickerDialog"/> class.
+        /// </summary>
+        /// <param name="availableRelationships">The collection of relationships available for selection.</param>
         public RelationshipPickerDialog(IEnumerable<RelationshipItem> availableRelationships)
         {
             Text = "Select Relationship to Add";
@@ -148,6 +177,13 @@ namespace CascadeFields.Configurator.Dialogs
             CancelButton = _cancelButton;
         }
 
+        /// <summary>
+        /// Handles the user's selection when OK is clicked or a row is double-clicked.
+        /// </summary>
+        /// <remarks>
+        /// Sets SelectedRelationship to the relationship associated with the selected grid row
+        /// and closes the dialog with OK result.
+        /// </remarks>
         private void HandleSelection()
         {
             if (_grid.SelectedRows.Count > 0 && _grid.SelectedRows[0].Tag is RelationshipItem rel)

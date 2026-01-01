@@ -10,16 +10,43 @@ using Newtonsoft.Json;
 namespace CascadeFields.Configurator.Services
 {
     /// <summary>
-    /// Handles persistence of session state to disk
-    /// One session file per connection
+    /// File-based implementation of session persistence using JSON serialization.
     /// </summary>
+    /// <remarks>
+    /// <para><strong>Storage Architecture:</strong></para>
+    /// <list type="bullet">
+    /// <item><description>One JSON file per connection in %APPDATA%\XrmToolBox\Settings\CascadeFields.Configurator</description></item>
+    /// <item><description>Files are named using sanitized connection IDs</description></item>
+    /// <item><description>JSON format allows for easy inspection and manual editing if needed</description></item>
+    /// <item><description>Directory is created automatically on first use</description></item>
+    /// </list>
+    ///
+    /// <para><strong>Error Handling Philosophy:</strong></para>
+    /// <para>
+    /// This class follows a "fail-soft" approach where all I/O errors are caught and logged
+    /// but never propagated. Session persistence is a convenience feature, not a critical
+    /// operation, so failures should not disrupt the user experience.
+    /// </para>
+    ///
+    /// <para><strong>Thread Safety:</strong></para>
+    /// <para>
+    /// This implementation is not thread-safe. Concurrent access to the same session file
+    /// from multiple instances could result in data corruption. In practice, this is not
+    /// a concern since XrmToolBox typically runs single-instance per connection.
+    /// </para>
+    /// </remarks>
     public class SettingsRepository : ISettingsRepository
     {
         private readonly string _settingsPath;
 
         /// <summary>
-        /// Initializes the repository and ensures the settings folder exists.
+        /// Initializes a new instance of the <see cref="SettingsRepository"/> class
+        /// and ensures the settings directory exists.
         /// </summary>
+        /// <remarks>
+        /// Creates the settings directory at:
+        /// %APPDATA%\XrmToolBox\Settings\CascadeFields.Configurator
+        /// </remarks>
         public SettingsRepository()
         {
             _settingsPath = Path.Combine(
@@ -31,9 +58,11 @@ namespace CascadeFields.Configurator.Services
             Directory.CreateDirectory(_settingsPath);
         }
 
-        /// <summary>
-        /// Loads the saved session for a specific connection ID, if present.
-        /// </summary>
+        /// <inheritdoc />
+        /// <remarks>
+        /// Returns null if the connection ID is invalid, the session file doesn't exist,
+        /// or if deserialization fails. Logs errors to Debug output.
+        /// </remarks>
         public async Task<SessionState?> LoadSessionAsync(string connectionId)
         {
             if (string.IsNullOrWhiteSpace(connectionId))
@@ -57,9 +86,13 @@ namespace CascadeFields.Configurator.Services
             }
         }
 
-        /// <summary>
-        /// Persists a session snapshot to disk for the given connection.
-        /// </summary>
+        /// <inheritdoc />
+        /// <remarks>
+        /// Serializes the session to indented JSON for readability. Swallows I/O errors
+        /// after logging them to Debug output.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException">Thrown if session is null.</exception>
+        /// <exception cref="ArgumentException">Thrown if session.ConnectionId is null or whitespace.</exception>
         public async Task SaveSessionAsync(SessionState session)
         {
             if (session == null)
@@ -83,9 +116,10 @@ namespace CascadeFields.Configurator.Services
             }
         }
 
-        /// <summary>
-        /// Removes the persisted session file for a connection.
-        /// </summary>
+        /// <inheritdoc />
+        /// <remarks>
+        /// Silently succeeds if the session file doesn't exist. Logs deletion errors to Debug output.
+        /// </remarks>
         public async Task ClearSessionAsync(string connectionId)
         {
             if (string.IsNullOrWhiteSpace(connectionId))
@@ -109,9 +143,12 @@ namespace CascadeFields.Configurator.Services
             await Task.CompletedTask;
         }
 
-        /// <summary>
-        /// Retrieves all saved sessions across connections, skipping invalid files.
-        /// </summary>
+        /// <inheritdoc />
+        /// <remarks>
+        /// Iterates through all .json files in the settings directory. Invalid or corrupted
+        /// files are silently skipped. Returns an empty dictionary if the settings directory
+        /// doesn't exist.
+        /// </remarks>
         public async Task<Dictionary<string, SessionState>> GetAllSessionsAsync()
         {
             var sessions = new Dictionary<string, SessionState>();
@@ -140,6 +177,15 @@ namespace CascadeFields.Configurator.Services
             return await Task.FromResult(sessions);
         }
 
+        /// <summary>
+        /// Constructs the full file path for a session file based on the connection ID.
+        /// </summary>
+        /// <param name="connectionId">The connection ID to convert to a filename.</param>
+        /// <returns>The full path to the session file.</returns>
+        /// <remarks>
+        /// Sanitizes the connection ID by replacing invalid filename characters with underscores.
+        /// This ensures the resulting filename is valid on all supported platforms.
+        /// </remarks>
         private string GetSessionFilePath(string connectionId)
         {
             // Sanitize connection ID for use as filename

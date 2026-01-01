@@ -7,8 +7,39 @@ using CascadeFields.Configurator.Models.UI;
 namespace CascadeFields.Configurator.Dialogs
 {
     /// <summary>
-    /// Dialog that groups configured relationships by parent entity so a user can reload them.
+    /// Modal dialog for selecting a previously configured parent entity to reload its full cascade configuration.
     /// </summary>
+    /// <remarks>
+    /// <para><strong>Purpose:</strong></para>
+    /// <para>
+    /// Groups all configured relationships by their parent entity and presents them in a hierarchical
+    /// list view. Users select a parent entity row to reload the complete configuration including
+    /// all child relationships, field mappings, and filters.
+    /// </para>
+    ///
+    /// <para><strong>Grouping Strategy:</strong></para>
+    /// <para>
+    /// Configurations are grouped by parent entity logical name. Each parent group shows:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>Parent entity row (selectable) - loads all child relationships</description></item>
+    /// <item><description>Indented child rows (informational) - show configured relationships</description></item>
+    /// </list>
+    ///
+    /// <para><strong>UI Layout:</strong></para>
+    /// <list type="bullet">
+    /// <item><description>Four-column list view: Parent Entity, Child, Lookup Field, Relationship Schema</description></item>
+    /// <item><description>Parent rows show "(all configured children)" in the child column</description></item>
+    /// <item><description>Child rows are indented with "↳" for visual hierarchy</description></item>
+    /// <item><description>Double-click or OK button to select</description></item>
+    /// </list>
+    ///
+    /// <para><strong>Return Value:</strong></para>
+    /// <para>
+    /// SelectedConfiguration contains the parent entity and the complete JSON configuration
+    /// for all its child relationships.
+    /// </para>
+    /// </remarks>
     internal class ConfigurationPickerDialog : Form
     {
         private readonly ListView _listView;
@@ -16,8 +47,19 @@ namespace CascadeFields.Configurator.Dialogs
         private readonly Button _cancelButton;
         private readonly Dictionary<string, ParentEntityGroup> _parentGroups;
 
+        /// <summary>
+        /// Gets the selected configuration, or null if the dialog was canceled.
+        /// </summary>
+        /// <remarks>
+        /// The SelectedConfiguration contains the parent entity name and the full JSON configuration
+        /// string representing all configured child relationships.
+        /// </remarks>
         public ConfiguredRelationship? SelectedConfiguration { get; private set; }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ConfigurationPickerDialog"/> class.
+        /// </summary>
+        /// <param name="configurations">The collection of configured relationships to display.</param>
         public ConfigurationPickerDialog(IEnumerable<ConfiguredRelationship> configurations)
         {
             Text = "Select Configured Entity";
@@ -132,6 +174,13 @@ namespace CascadeFields.Configurator.Dialogs
             CancelButton = _cancelButton;
         }
 
+        /// <summary>
+        /// Handles the user's selection when OK is clicked or an item is double-clicked.
+        /// </summary>
+        /// <remarks>
+        /// Creates a ConfiguredRelationship containing the parent entity and the complete JSON
+        /// configuration for all child relationships in that parent's group.
+        /// </remarks>
         private void HandleSelection()
         {
             if (_listView.SelectedItems.Count > 0 && _listView.SelectedItems[0].Tag is RowTag tag)
@@ -148,12 +197,21 @@ namespace CascadeFields.Configurator.Dialogs
             }
         }
 
+        /// <summary>
+        /// Tag object attached to each list view item to associate it with its parent group.
+        /// </summary>
         private class RowTag
         {
             public ParentEntityGroup Group { get; set; } = null!;
             public bool IsChild { get; set; }
         }
 
+        /// <summary>
+        /// Formats an entity for display as "DisplayName (LogicalName)" or just the logical name if display name is missing.
+        /// </summary>
+        /// <param name="logicalName">The entity logical name.</param>
+        /// <param name="displayName">The entity display name (optional).</param>
+        /// <returns>Formatted entity string.</returns>
         private static string FormatEntity(string logicalName, string? displayName = null)
         {
             var display = string.IsNullOrWhiteSpace(displayName) ? logicalName : displayName;
@@ -162,6 +220,12 @@ namespace CascadeFields.Configurator.Dialogs
                 : $"{display} ({logicalName})";
         }
 
+        /// <summary>
+        /// Formats a field for display as "DisplayName (LogicalName)" or just the logical name if display name is missing.
+        /// </summary>
+        /// <param name="logicalName">The field logical name.</param>
+        /// <param name="displayName">The field display name (optional).</param>
+        /// <returns>Formatted field string.</returns>
         private static string FormatField(string logicalName, string? displayName = null)
         {
             var display = string.IsNullOrWhiteSpace(displayName) ? logicalName : displayName;
@@ -169,6 +233,10 @@ namespace CascadeFields.Configurator.Dialogs
                 ? display ?? string.Empty
                 : $"{display} ({logicalName})";
         }
+
+        /// <summary>
+        /// Internal grouping class that aggregates all child relationships under a common parent entity.
+        /// </summary>
         private class ParentEntityGroup
         {
             public string ParentEntity { get; set; } = string.Empty;

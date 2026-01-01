@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.ServiceModel;
 using System.Threading;
 using System.Threading.Tasks;
 using CascadeFields.Configurator.Models;
@@ -364,6 +365,16 @@ namespace CascadeFields.Configurator.Services
             }, cancellationToken);
         }
 
+        /// <summary>
+        /// Adds the plugin assembly component to the specified solution.
+        /// This method is idempotent and safe to call multiple times.
+        /// </summary>
+        /// <remarks>
+        /// Uses a try-and-handle approach to avoid race conditions when multiple assemblies
+        /// are updated in quick succession. When AddRequiredComponents=false, only the assembly
+        /// component is added to the solution; plugin types are registered but don't get
+        /// separate solution component entries.
+        /// </remarks>
         private void AddPluginAssemblyComponentsToSolution(Guid assemblyId, Guid typeId, Guid solutionId, IProgress<string> progress)
         {
             try
@@ -372,11 +383,10 @@ namespace CascadeFields.Configurator.Services
 
                 // Plugin Assembly component type = 91
                 // Note: When you add a plugin assembly to a solution with AddRequiredComponents=false,
-                // it only adds the assembly. The plugin types are registered within the assembly but 
+                // it only adds the assembly. The plugin types are registered within the assembly but
                 // don't have their own solution component entries.
-                if (!ComponentExistsInSolution(solutionId, 91, assemblyId))
+                if (AddSolutionComponent(solutionId, 91, assemblyId))
                 {
-                    AddSolutionComponent(solutionId, 91, assemblyId);
                     added++;
                     progress.Report("Added plugin assembly to solution.");
                 }
@@ -385,7 +395,8 @@ namespace CascadeFields.Configurator.Services
             }
             catch (Exception ex)
             {
-                progress.Report($"Warning: Failed to add plugin components to solution: {ex.Message}");
+                progress.Report($"Error: Failed to add plugin components to solution: {ex.Message}");
+                throw; // Re-throw to indicate failure rather than silently continuing
             }
         }
 
@@ -705,6 +716,15 @@ namespace CascadeFields.Configurator.Services
             return id;
         }
 
+        /// <summary>
+        /// Adds plugin components (assembly, type, step, and image) to the specified solution.
+        /// This method is idempotent and safe to call multiple times for the same components.
+        /// </summary>
+        /// <remarks>
+        /// Uses a try-and-handle approach instead of check-then-act to avoid race conditions.
+        /// When publishing multiple configurations in quick succession, components may already exist
+        /// in the solution from previous operations. This is handled gracefully without errors.
+        /// </remarks>
         private void AddComponentsToSolution(Entity pluginType, Guid stepId, Guid preImageId, Guid solutionId, IProgress<string> progress)
         {
             try
@@ -720,33 +740,30 @@ namespace CascadeFields.Configurator.Services
                 var componentsAdded = 0;
 
                 // Add plugin assembly component (Component Type = 91)
-                if (!ComponentExistsInSolution(solutionId, 91, pluginAssemblyId))
+                // No need to check first - AddSolutionComponent is now idempotent
+                if (AddSolutionComponent(solutionId, 91, pluginAssemblyId))
                 {
-                    AddSolutionComponent(solutionId, 91, pluginAssemblyId);
                     componentsAdded++;
                     progress.Report("Added plugin assembly to solution.");
                 }
 
                 // Add plugin type component (Component Type = 90)
-                if (!ComponentExistsInSolution(solutionId, 90, pluginType.Id))
+                if (AddSolutionComponent(solutionId, 90, pluginType.Id))
                 {
-                    AddSolutionComponent(solutionId, 90, pluginType.Id);
                     componentsAdded++;
                     progress.Report("Added plugin type to solution.");
                 }
 
                 // Add processing step component (Component Type = 92)
-                if (!ComponentExistsInSolution(solutionId, 92, stepId))
+                if (AddSolutionComponent(solutionId, 92, stepId))
                 {
-                    AddSolutionComponent(solutionId, 92, stepId);
                     componentsAdded++;
                     progress.Report("Added processing step to solution.");
                 }
 
-                // Add step image component (Component Type = 93)
-                if (!ComponentExistsInSolution(solutionId, 93, preImageId))
+                // Add step image component (Component Type = 93) if provided
+                if (preImageId != Guid.Empty && AddSolutionComponent(solutionId, 93, preImageId))
                 {
-                    AddSolutionComponent(solutionId, 93, preImageId);
                     componentsAdded++;
                     progress.Report("Added step image to solution.");
                 }
@@ -755,10 +772,25 @@ namespace CascadeFields.Configurator.Services
             }
             catch (Exception ex)
             {
-                progress.Report($"Warning: Failed to add components to solution: {ex.Message}");
+                progress.Report($"Error: Failed to add components to solution: {ex.Message}");
+                throw; // Re-throw to indicate failure rather than silently continuing
             }
         }
 
+        /// <summary>
+        /// Checks if a component exists in the solution by querying the solutioncomponent table.
+        /// </summary>
+        /// <remarks>
+        /// NOTE: This method is kept for potential future use but is no longer used in the main
+        /// solution component addition flow. The new approach (as of the race condition fix) uses
+        /// a try-and-handle pattern in AddSolutionComponent instead of check-then-act to avoid
+        /// race conditions when multiple configurations are published in quick succession.
+        ///
+        /// This method has known issues:
+        /// - Can return stale data if called immediately after adding a component
+        /// - Returns false on query errors, which can lead to duplicate addition attempts
+        /// - Creates a race condition window between check and act operations
+        /// </remarks>
         private bool ComponentExistsInSolution(Guid solutionId, int componentType, Guid componentId)
         {
             try
@@ -780,18 +812,49 @@ namespace CascadeFields.Configurator.Services
             }
         }
 
-        private void AddSolutionComponent(Guid solutionId, int componentType, Guid componentId)
+        /// <summary>
+        /// Adds a component to a solution using the AddSolutionComponent message.
+        /// This method is idempotent - if the component already exists in the solution, it returns false without error.
+        /// </summary>
+        /// <param name="solutionId">The ID of the solution to add the component to</param>
+        /// <param name="componentType">The component type code (91=Assembly, 90=PluginType, 92=Step, 93=Image)</param>
+        /// <param name="componentId">The ID of the component to add</param>
+        /// <returns>True if the component was added; false if it already existed in the solution</returns>
+        /// <remarks>
+        /// This method uses a try-and-handle approach rather than check-then-act to avoid race conditions
+        /// when multiple publish operations run in quick succession. The Dataverse AddSolutionComponent
+        /// message will throw an error if the component already exists, which we catch and treat as success.
+        /// </remarks>
+        private bool AddSolutionComponent(Guid solutionId, int componentType, Guid componentId)
         {
-            // Use AddSolutionComponent message instead of Create
-            var request = new OrganizationRequest("AddSolutionComponent")
+            try
             {
-                ["ComponentId"] = componentId,
-                ["ComponentType"] = componentType,
-                ["SolutionUniqueName"] = GetSolutionUniqueName(solutionId),
-                ["AddRequiredComponents"] = false
-            };
+                // Use AddSolutionComponent message instead of Create
+                var request = new OrganizationRequest("AddSolutionComponent")
+                {
+                    ["ComponentId"] = componentId,
+                    ["ComponentType"] = componentType,
+                    ["SolutionUniqueName"] = GetSolutionUniqueName(solutionId),
+                    ["AddRequiredComponents"] = false
+                };
 
-            _service.Execute(request);
+                _service.Execute(request);
+                return true; // Component was successfully added
+            }
+            catch (FaultException<OrganizationServiceFault> ex)
+            {
+                // Error code 0x8004F009 or -2147160055 indicates the component already exists in the solution
+                // This is expected behavior when publishing multiple configurations to the same solution
+                if (ex.Detail?.ErrorCode == unchecked((int)0x8004F009) ||
+                    ex.Message.Contains("already exists") ||
+                    ex.Message.Contains("duplicate", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false; // Component already exists, which is fine
+                }
+
+                // Re-throw unexpected errors
+                throw;
+            }
         }
 
         private string GetSolutionUniqueName(Guid solutionId)

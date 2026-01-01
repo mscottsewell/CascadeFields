@@ -8,7 +8,10 @@
       "Bash(unzip:*)",
       "Bash(dotnet pack --help:*)",
       "Bash(dotnet pack:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(dotnet build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

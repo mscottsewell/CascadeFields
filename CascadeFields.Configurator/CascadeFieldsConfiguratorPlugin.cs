@@ -11,8 +11,41 @@ using CascadeFields.Configurator.Helpers;
 namespace CascadeFields.Configurator
 {
     /// <summary>
-    /// XrmToolBox entry point that hosts the CascadeFields Configurator control and ensures plugin dependencies load.
+    /// XrmToolBox plugin entry point for the CascadeFields Configurator.
     /// </summary>
+    /// <remarks>
+    /// <para><strong>Purpose:</strong></para>
+    /// <para>
+    /// This plugin allows administrators to configure cascade field operations for Dataverse entities.
+    /// When a parent record's fields are updated, the plugin automatically copies those changes to
+    /// related child records based on configured mappings and filters.
+    /// </para>
+    ///
+    /// <para><strong>Key Features:</strong></para>
+    /// <list type="bullet">
+    /// <item><description>Visual configuration of parent-to-child field mappings</description></item>
+    /// <item><description>Support for multiple child relationships per parent entity</description></item>
+    /// <item><description>Filter criteria to limit which child records are updated</description></item>
+    /// <item><description>Trigger field selection to control when cascade occurs</description></item>
+    /// <item><description>JSON configuration preview and validation</description></item>
+    /// <item><description>One-click deployment to Dataverse as plugin steps</description></item>
+    /// <item><description>Automatic plugin assembly registration and updates</description></item>
+    /// <item><description>Session persistence for quick configuration restoration</description></item>
+    /// </list>
+    ///
+    /// <para><strong>Assembly Loading:</strong></para>
+    /// <para>
+    /// The static constructor registers a custom assembly resolver to ensure dependent DLLs
+    /// (Newtonsoft.Json, etc.) load correctly within the XrmToolBox plugin isolation environment.
+    /// See <see cref="AssemblyResolver"/> for implementation details.
+    /// </para>
+    ///
+    /// <para><strong>XrmToolBox Integration:</strong></para>
+    /// <para>
+    /// This class uses MEF (Managed Extensibility Framework) attributes to register with XrmToolBox,
+    /// providing metadata like name, description, and icons that appear in the plugin browser.
+    /// </para>
+    /// </remarks>
     [Export(typeof(IXrmToolBoxPlugin))]
     [ExportMetadata("Name", "CascadeFields Configurator")]
     [ExportMetadata("Description", "Configure and deploy the CascadeFields plugin. Copies selected fields from a parent record to their related child records.")]

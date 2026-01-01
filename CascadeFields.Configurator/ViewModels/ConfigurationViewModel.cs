@@ -101,6 +101,8 @@ namespace CascadeFields.Configurator.ViewModels
             {
                 if (SetProperty(ref _selectedParentEntity, value))
                 {
+                    OnPropertyChanged(nameof(IsConfigurationValid));
+                    OnPropertyChanged(nameof(CanPublish));
                     _ = OnParentEntityChangedAsync();
                 }
             }
@@ -125,7 +127,13 @@ namespace CascadeFields.Configurator.ViewModels
         public bool IsConnected
         {
             get => _isConnected;
-            private set => SetProperty(ref _isConnected, value);
+            private set
+            {
+                if (SetProperty(ref _isConnected, value))
+                {
+                    OnPropertyChanged(nameof(CanPublish));
+                }
+            }
         }
 
         /// <summary>
@@ -143,7 +151,13 @@ namespace CascadeFields.Configurator.ViewModels
         public bool IsLoading
         {
             get => _isLoading;
-            private set => SetProperty(ref _isLoading, value);
+            private set
+            {
+                if (SetProperty(ref _isLoading, value))
+                {
+                    OnPropertyChanged(nameof(CanPublish));
+                }
+            }
         }
 
         /// <summary>
@@ -339,6 +353,7 @@ namespace CascadeFields.Configurator.ViewModels
 
                 UpdateJsonPreview();
                 OnPropertyChanged(nameof(IsConfigurationValid));
+                OnPropertyChanged(nameof(CanPublish));
                 ScheduleSave();
             };
         }

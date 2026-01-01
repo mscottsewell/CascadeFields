@@ -7,14 +7,42 @@ using CascadeFields.Configurator.Models.UI;
 namespace CascadeFields.Configurator.Dialogs
 {
     /// <summary>
-    /// Dialog that presents child relationships for the selected parent so the user can choose one to configure.
+    /// Modal dialog for selecting a child relationship to configure for cascade operations.
     /// </summary>
+    /// <remarks>
+    /// <para><strong>Purpose:</strong></para>
+    /// <para>
+    /// Displays available child relationships for a parent entity in a selectable grid format,
+    /// allowing users to choose which relationship they want to add to their cascade configuration.
+    /// </para>
+    ///
+    /// <para><strong>UI Features:</strong></para>
+    /// <list type="bullet">
+    /// <item><description>Three-column grid showing entity name, lookup field, and relationship schema</description></item>
+    /// <item><description>Full-row selection for easy relationship choice</description></item>
+    /// <item><description>Double-click to select and close</description></item>
+    /// <item><description>Displays both display names and logical names for clarity</description></item>
+    /// </list>
+    ///
+    /// <para><strong>Usage:</strong></para>
+    /// <para>
+    /// Instantiate with available relationships, call ShowDialog(), and check SelectedRelationship
+    /// if DialogResult is OK.
+    /// </para>
+    /// </remarks>
     public partial class ChildRelationshipPickerDialog : Form
     {
         private readonly List<RelationshipItem> _availableRelationships;
 
+        /// <summary>
+        /// Gets the relationship selected by the user, or null if canceled.
+        /// </summary>
         public RelationshipItem? SelectedRelationship { get; private set; }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ChildRelationshipPickerDialog"/> class.
+        /// </summary>
+        /// <param name="relationships">The list of available child relationships to display.</param>
         public ChildRelationshipPickerDialog(List<RelationshipItem> relationships)
         {
             _availableRelationships = relationships ?? new List<RelationshipItem>();
@@ -146,6 +174,12 @@ namespace CascadeFields.Configurator.Dialogs
             Controls.Add(gridRelationships);
         }
 
+        /// <summary>
+        /// Initializes the relationship grid with data and formatting.
+        /// </summary>
+        /// <remarks>
+        /// Grid initialization is handled in InitializeComponent for this dialog.
+        /// </remarks>
         private void InitializeGrid()
         {
             // Grid initialization is done in InitializeComponent
