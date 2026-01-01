@@ -1,0 +1,8 @@
+{
+  // Repo-wide markdownlint configuration.
+  // Allow inline <img> tags so docs can include screenshots with sizing when needed.
+  // Keep other inline HTML disallowed.
+  "MD033": {
+    "allowed_elements": ["img", "br"]
+  }
+}

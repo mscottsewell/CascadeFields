@@ -1,6 +1,30 @@
-# Quick Start Guide
+# XrmToolBox QuickStart
 
-Get up and running with CascadeFields in minutes using the XrmToolBox Configurator.
+This guide is the complete end-user/admin documentation for configuring and publishing CascadeFields from within XrmToolBox.
+
+## Table of Contents
+
+### Getting Started
+
+- [Prerequisites](#prerequisites)
+- [Install the Configurator](#install-the-configurator)
+- [Configure Your Cascade](#configure-your-cascade)
+- [Publish Configuration](#publish-configuration)
+
+### UI Reference
+
+- [Understanding the User Interface](#understanding-the-user-interface)
+- [Retrieve Configured Entity](#retrieve-configured-entity)
+
+### Operations & Support
+
+- [Test It](#test-it)
+- [Monitor and Debug](#monitor-and-debug)
+- [Removing or Modifying Mappings](#removing-or-modifying-mappings)
+- [Troubleshooting](#troubleshooting)
+- [Best Practices](#best-practices)
+- [Next Steps](#next-steps)
+- [Getting Help](#getting-help)
 
 ## Prerequisites
 
@@ -9,18 +33,15 @@ Get up and running with CascadeFields in minutes using the XrmToolBox Configurat
 - Security roles with update permissions on parent and child entities
 - An **unmanaged solution** containing the entities you want to map (both parent and child entities)
 
-> **💡 Pro Tip:** Start simple with a single field mapping and evaluate the behavior to ensure it's what you're looking for before adding more complex configurations.
 
-## Setup Steps
-
-### 1. Install the Configurator
+## Install the Configurator
 
 1. Open **XrmToolBox**
 2. Go to **Tools Library** (or Plugin Store)
 3. Search for **"CascadeFields Configurator"**
 4. Click **Install**
 
-### 2. Configure Your Cascade
+## Configure Your Cascade
 
 1. Open **XrmToolBox** and launch **CascadeFields Configurator**
 2. Connect to your environment
@@ -42,7 +63,7 @@ Get up and running with CascadeFields in minutes using the XrmToolBox Configurat
    - This ensures only active and editable records are affected
    - Additional filters can be added (e.g., `statuscode|eq|1`)
 
-### 3. Publish Configuration
+## Publish Configuration
 
 1. Click **Publish Configuration and Plug-in** in the ribbon
 2. The selected solution will be updated to include:
@@ -91,8 +112,10 @@ Below these controls are three important checkboxes:
 | Checkbox | Description | Recommendation |
 | --- | --- | --- |
 | **Is Active** | When checked, the configuration is active and the plugin will process cascades. | Uncheck and publish to temporarily disable cascading without removing the configuration. |
-| **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent System Job storage bloat. (Only applies to parent step since child steps run synchronously.) | ✅ Disable during development and testing to monitor successful jobs. <br> ⚠️ **Enable in production** to avoid System Job bloat |
-| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. <br> > **Note (Org Setting Required):** This checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have **Plug-in trace log** enabled (see “Plugin Trace Logs” below). | ✅ Enable during development and testing. <br> ⚠️ **Disable in production** to reduce log volume and improve performance. |
+| **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent System Job storage bloat. (Only applies to parent step since child steps run synchronously.) | Disable during development/testing to monitor successful jobs; enable in production to avoid System Job bloat. |
+| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution.  | Enable during development/testing; disable in production to reduce log volume and improve performance. |
+
+> **Important: The Enable Detailed Tracing** checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have **Plug-in trace log** enabled (see “View Plugin Trace Logs” below).
 
 
 ### Right Pane
@@ -115,7 +138,7 @@ To load an existing configuration:
 
 > **Tip:** When you select a parent entity from the dropdown, any existing configuration for that entity loads automatically. If no child relationships exist, you'll be prompted to add one.
 
-### 4. Test It
+## Test It
 
 **Parent Update Test:**
 
@@ -138,7 +161,7 @@ To load an existing configuration:
 3. Save
 4. Mapped fields should update to new parent's values
 
-### 5. Monitor and Debug
+## Monitor and Debug
 
 **View Plugin Trace Logs:**
 
@@ -243,9 +266,9 @@ To remove the plugin assembly and all associated steps:
 
 ## Next Steps
 
-- Review [README.md](README.md) for detailed documentation and architecture
-- Check [CONFIGURATION.md](CONFIGURATION.md) for advanced configuration patterns
-- Explore the `Examples\` folder for more sample configurations
+- Review [CONFIGURATION.md](CONFIGURATION.md) for JSON schema and advanced configuration patterns
+- Explore the [Examples](Examples/) folder for sample configurations
+- For building, packaging, manual plug-in registration, and contributing, see [PRODEV.md](PRODEV.md)
 
 ## Getting Help
 
@@ -253,3 +276,4 @@ To remove the plugin assembly and all associated steps:
 2. ✅ Verify JSON configuration is valid
 3. ✅ Confirm `lookupFieldName` is specified
 4. ✅ Test in dev environment first
+

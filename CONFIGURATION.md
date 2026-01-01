@@ -5,6 +5,11 @@
 
 This guide covers all configuration options for CascadeFields, including best practices, UI behaviors, and advanced patterns. It reflects the latest features:
 
+**Related documentation:**
+
+- XrmToolBox admin guide: [QUICKSTART.md](QUICKSTART.md)
+- Build/manual registration/contributing: [PRODEV.md](PRODEV.md)
+
 - **Three left-pane tabs:**
   - **Configuration:** Select solution and parent entity
   - **Log:** See real-time status and troubleshooting info
