@@ -88,11 +88,12 @@ The left pane is organized into three tabs:
 
 Below these controls are three important checkboxes:
 
-| Checkbox | What it does | When to use |
+| Checkbox | Description | Recommendation |
 | --- | --- | --- |
-| **Is Active** | Controls whether the plugin processes cascades for this configuration. | Leave checked for normal operation. Uncheck to temporarily pause cascading without removing the configuration. |
-| **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent clutter. Only applies to the parent update step since child steps run synchronously. | Leave checked to keep System Jobs clean. Uncheck if you want to monitor successful jobs. |
-| **Enable Detailed Tracing** | Writes verbose trace logs for every plugin execution to the Plugin Trace Log. | ✅ Enable during development and testing. ⚠️ Disable in production to reduce log volume and improve performance. |
+| **Is Active** | When checked, the configuration is active and the plugin will process cascades. | Uncheck and publish to temporarily disable cascading without removing the configuration. |
+| **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent System Job storage bloat. (Only applies to parent step since child steps run synchronously.) | ✅ Disable during development and testing to monitor successful jobs. <br> ⚠️ **Enable in production** to avoid System Job bloat |
+| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. <br> > **Note (Org Setting Required):** This checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have **Plug-in trace log** enabled (see “Plugin Trace Logs” below). | ✅ Enable during development and testing. <br> ⚠️ **Disable in production** to reduce log volume and improve performance. |
+
 
 ### Right Pane
 
