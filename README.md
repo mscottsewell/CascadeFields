@@ -1,13 +1,17 @@
-<img width="1248" alt="image" src="https://github.com/mscottsewell/CascadeFields/blob/master/images/GitHub%20Banner.png" />
+<img width="1248" height="307" alt="image" src="https://github.com/user-attachments/assets/d1d0aa60-c8b5-4585-9d45-7dff22d8587a" />
 
 # CascadeFields for Microsoft Dataverse
 
 CascadeFields is a Dataverse plug-in plus an XrmToolBox Configurator that helps keep related records in sync by cascading field values from parent records to their related child records.
 <img width="1349" alt="image" src="https://github.com/user-attachments/assets/6c0cd72e-80f4-4b9d-833d-629f343cbd55" />
 
-## Why
+## Why CascadeFields?
 
 Keeping related records consistent in Dataverse often means manual updates, complex Power Automate flows, or custom plug-in development. CascadeFields is intended to give admins and teams a fast, repeatable way to keep child records aligned with parent data while remaining solution-aware and easy to manage.
+
+> **Doesn't this result in data duplication?**
+Sure, yes. But there are cases where duplicating the data makes it easier for users to search/filter within Dataverse.
+A simplified example is where you have the hierarchy of Account-Contact records. If a record is attached to the contact record via a lookup it's readily visible in the child's related records, but if you go to the Account record (the parent of the contact) this child of a child record is not in a related view. - Now consider if the records are arrainged in a multiple level heirarcy, keeping a link to the parent records on the ultimate child record goes a long way toward making the records easily discoverable by an end-user. It's an *option* for you when you want to add these extra shortcuts/relationships just to make the app easier to use through the front-end. - If it helps, great! If you want to solve it another way, also great! :)
 
 ## What it does
 
