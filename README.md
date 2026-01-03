@@ -1,4 +1,4 @@
-<img width="1248" height="307" alt="image" src="https://github.com/user-attachments/assets/549537dc-6687-4faf-aca6-1d2c843e1f7a" />
+<img width="1248" alt="image" src="https://github.com/mscottsewell/CascadeFields/blob/d631690844bc6b50cefff11053299f8594a7c8ee/images/GitHub%20Banner.png" />
 
 # CascadeFields for Microsoft Dataverse
 
