@@ -1,3 +1,5 @@
+<img width="1248" height="307" alt="image" src="https://github.com/user-attachments/assets/549537dc-6687-4faf-aca6-1d2c843e1f7a" />
+
 # CascadeFields for Microsoft Dataverse
 
 CascadeFields is a Dataverse plug-in plus an XrmToolBox Configurator that helps keep related records in sync by cascading field values from parent records to their related child records.
