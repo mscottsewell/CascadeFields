@@ -33,7 +33,6 @@ This guide is the complete end-user/admin documentation for configuring and publ
 - Security roles with update permissions on parent and child entities
 - An **unmanaged solution** containing the entities you want to map (both parent and child entities)
 
-
 ## Install the Configurator
 
 1. Open **XrmToolBox**
@@ -81,11 +80,13 @@ This guide is the complete end-user/admin documentation for configuring and publ
 
 ### Ribbon Buttons
 
-The toolbar ribbon at the top of the Configurator contains the following buttons (left to right):
+The toolbar ribbon at the top of the Configurator contains the following buttons
+(left to right):
 
 | Button | Purpose |
 | --- | --- |
-| **Retrieve Configured Entity** | Load an existing configuration from Dataverse. If only one parent entity is configured, it loads automatically. If multiple are configured, a selection dialog appears. |
+| **Retrieve Configured Entity** | Load saved config from Dataverse. |
+|  | Auto-loads single parent; prompts if multiple. |
 | **Export JSON** | Save the current configuration to a JSON file for backup, sharing, or version control. |
 | **Import JSON** | Load a configuration from a JSON file. Useful for restoring backups during configuration testing. |
 | **Add Relationship** | Add a new child entity relationship to the current parent entity configuration. Opens a dialog to select the child entity and lookup field. |
@@ -116,7 +117,6 @@ Below these controls are three important checkboxes:
 | **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution.  | Enable during development/testing; disable in production to reduce log volume and improve performance. |
 
 > **Important: The Enable Detailed Tracing** checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have **Plug-in trace log** enabled (see “View Plugin Trace Logs” below).
-
 
 ### Right Pane
 
@@ -276,4 +276,3 @@ To remove the plugin assembly and all associated steps:
 2. ✅ Verify JSON configuration is valid
 3. ✅ Confirm `lookupFieldName` is specified
 4. ✅ Test in dev environment first
-
