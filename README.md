@@ -1,4 +1,5 @@
-<img width="1248" alt="image" src="https://github.com/user-attachments/assets/d1d0aa60-c8b5-4585-9d45-7dff22d8587a" />
+<img width="1247" height="306" alt="image" src="https://github.com/user-attachments/assets/e8877a34-c96e-4af6-9edd-7fb22f0358b2" />
+
 
 # CascadeFields for Microsoft Dataverse
 
