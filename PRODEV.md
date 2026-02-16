@@ -101,6 +101,11 @@ If you are doing manual registration, you can:
 - Disable the corresponding step(s), and/or
 - Set these flags to `false` in the step Unsecure Configuration JSON (the plug-in will early-exit).
 
+When publishing via the Configurator, steps are individually enabled or disabled
+in Dataverse based on these flags. For example, if `cascadeOnChildCreate` is
+`false`, the Child Create step is disabled (state set to Disabled) rather than
+deleted, so it can be re-enabled later without re-registering.
+
 ### Recommended Registration Notes
 
 - Use filtering attributes on steps to reduce executions (limit to trigger fields and lookup fields as appropriate).

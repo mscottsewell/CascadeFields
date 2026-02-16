@@ -61,8 +61,13 @@ also great! :)
 ## Key features
 
 - No-code configuration from within XrmToolBox
+- Per-trigger toggles (independently control parent update, child create,
+  and child relink cascades)
 - Trigger fields (control which parent changes cause cascades)
-- Optional filter criteria (control which child rows are updated)
+- Optional filter criteria (control which child rows are updated, including
+  `in`/`notin` multi-value filters)
+- Choice/lookup-to-text field mapping (cascade display labels to text fields)
+- Auto-delete successful async system jobs to prevent storage bloat
 - Supports parent update cascades and child create/relink scenarios
 - Designed for performance (asynchronous parent updates where appropriate)
 - Diagnostics via Dataverse plug-in trace logs (when enabled at the environment level)

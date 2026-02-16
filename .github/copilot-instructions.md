@@ -73,6 +73,8 @@ Configuration lives in the plug-in step **Unsecure Configuration** field. The
 canonical schema and patterns are documented in `CONFIGURATION.md`. Key points:
 
 - Root properties: `parentEntity`, `isActive`, `enableTracing`,
+  `cascadeOnParentUpdate`, `cascadeOnChildCreate`, `cascadeOnChildRelink`,
+  `deleteAsyncOperationIfSuccessful`, `bypassCustomPluginExecution`,
   `relatedEntities[]`
 - Each related entity has `entityName`, `lookupFieldName`, optional
   `filterCriteria`, and `fieldMappings[]`
@@ -87,6 +89,8 @@ canonical schema and patterns are documented in `CONFIGURATION.md`. Key points:
 | `QUICKSTART.md` | XrmToolBox admin guide |
 | `CONFIGURATION.md` | JSON schema, patterns, reference |
 | `PRODEV.md` | Build, packaging, manual registration, contributing |
+| `CHOICE_FIELD_MAPPING.md` | Guide for mapping choice/lookup labels to text fields |
+| `BUGFIX_CHOICE_FIELD_NAME.md` | Companion "name" field bug fix details |
 
 When changing behavior or UI, update the relevant doc file(s).
 

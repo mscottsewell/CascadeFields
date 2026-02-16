@@ -96,6 +96,8 @@ field|operator|value;field2|operator2|value2
 | `ne` | `notequal`, `!=` | Not equal to |
 | `gt` | `greaterthan`, `>` | Greater than |
 | `lt` | `lessthan`, `<` | Less than |
+| `in` | - | Value is in a comma-separated list |
+| `notin` | - | Value is not in a comma-separated list |
 | `null` | - | Is null |
 | `notnull` | - | Is not null |
 | `like` | - | Pattern match |
@@ -118,6 +120,18 @@ field|operator|value;field2|operator2|value2
 
 ```json
 "filterCriteria": "primarycontactid|notnull|null"
+```
+
+**Match multiple values (IN):**
+
+```json
+"filterCriteria": "address1_stateorprovince|in|CA,NY,TX"
+```
+
+**Exclude specific values (NOT IN):**
+
+```json
+"filterCriteria": "industrycode|notin|6,9"
 ```
 
 
@@ -148,6 +162,21 @@ The plugin automatically handles type conversions:
 - Lookup: Uses display name (or formatted value, or ID as fallback)
 - OptionSet: Uses label text (or numeric value as fallback)
 - Automatically truncates if target field is too short
+
+**Companion "Name" Fields:**
+
+You can map the display-name companion of a lookup or choice field directly to a
+text field. These virtual fields end with `name` and are resolved at runtime:
+
+| Source field | Base field | Resolves to |
+| --- | --- | --- |
+| `parentcustomeridname` | `parentcustomerid` | Lookup display name |
+| `statuscodename` | `statuscode` | Status reason label |
+| `industrycodename` | `industrycode` | Choice option label |
+
+These companion fields do not appear in entity metadata. The plugin detects them
+automatically by stripping the `name` suffix and reading the base attribute's
+formatted value.
 
 **Same-Type Mappings:**
 
@@ -302,6 +331,35 @@ For production environments, disable verbose tracing:
 **Note:** Error logging is always enabled regardless of this setting.
 
 
+### Bypass Custom Plugin Execution (Advanced)
+
+The `bypassCustomPluginExecution` flag is an **opt-in** setting that tells
+Dataverse to skip all downstream custom plugins and workflows when updating
+child records during a cascade.
+
+```json
+{
+  "parentEntity": "account",
+  "isActive": true,
+  "bypassCustomPluginExecution": true,
+  "relatedEntities": [...]
+}
+```
+
+**Default:** `false` — child updates run through the normal Dataverse plugin
+pipeline.
+
+> **⚠️ Requirements and warnings:**
+>
+> - The executing user **must** hold the `prvBypassCustomPluginExecution`
+>   privilege (typically System Administrator only). If the user lacks this
+>   privilege, every child update will fail.
+> - When enabled, **all** custom plugins, workflows, and business rules on the
+>   child entity are skipped for cascade-triggered updates.
+> - Use this only when you have a specific reason (e.g., avoiding recursive
+>   plugin execution or import-pipeline conflicts).
+
+
 ### Configuration Validation & UI Guidance
 
 **UI Guidance:**
@@ -328,7 +386,10 @@ Before deploying:
 
 1. **Use filtering attributes** - Register plugin steps with only trigger fields
 2. **Apply filter criteria** - Target specific child records
-3. **Limit child record count** - Plugin has 5000 record safety limit
+3. **Limit child record count** - Plugin has 5000 record safety limit per query.
+   If a query returns exactly 5000 records, a warning is logged:
+   `Query returned 5000 records (the safety limit). Some child records may not have been updated.`
+   Use filter criteria to narrow the scope if you hit this limit.
 4. **Use batch updates** - Automatically enabled (50 records/batch)
 
 ### Monitor Performance
@@ -413,6 +474,11 @@ For large record sets (>1000 children):
   "parentEntity": "account",
   "isActive": true,
   "enableTracing": false,
+  "cascadeOnParentUpdate": true,
+  "cascadeOnChildCreate": true,
+  "cascadeOnChildRelink": true,
+  "deleteAsyncOperationIfSuccessful": true,
+  "bypassCustomPluginExecution": false,
   "relatedEntities": [
     {
       "entityName": "contact",
@@ -453,3 +519,5 @@ This configuration:
 - Only updates active contacts
 - Disabled verbose tracing for production
 - Supports parent updates, child creates, and child relinks
+- Auto-deletes successful async system jobs
+- Child updates run through normal plugin pipeline (bypass disabled)

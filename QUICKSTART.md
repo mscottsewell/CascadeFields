@@ -278,6 +278,10 @@ To remove the plugin assembly and all associated steps:
 - Create circular cascades (A → B → A)
 - Map fields with different data types without testing
 - Deploy directly to production without testing
+- Enable `bypassCustomPluginExecution` unless you specifically need it — it
+  requires the `prvBypassCustomPluginExecution` privilege (System Administrator)
+  and skips all downstream plugins and workflows on child records. See
+  [CONFIGURATION.md](CONFIGURATION.md) for details.
 
 ## Next Steps
 
