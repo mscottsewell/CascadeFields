@@ -5,6 +5,7 @@ using Microsoft.Xrm.Sdk.Messages;
 using Microsoft.Xrm.Sdk.Metadata;
 using Microsoft.Xrm.Sdk.Query;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -53,10 +54,14 @@ namespace CascadeFields.Plugin.Services
         private readonly PluginTracer _tracer;
 
         /// <summary>
-        /// In-memory cache of attribute metadata to avoid repeated metadata queries for the same fields.
+        /// Static cache of attribute metadata to avoid repeated metadata queries across plugin executions.
         /// Key format: "entityname:attributename" (case-insensitive).
         /// </summary>
-        private readonly Dictionary<string, AttributeMetadata> _attributeMetadataCache;
+        private static readonly ConcurrentDictionary<string, AttributeMetadata> _attributeMetadataCache =
+            new ConcurrentDictionary<string, AttributeMetadata>(StringComparer.OrdinalIgnoreCase);
+
+        private static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, AttributeMetadata>> _entityAttributesCache =
+            new ConcurrentDictionary<string, IReadOnlyDictionary<string, AttributeMetadata>>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
         /// Initializes a new instance of the <see cref="CascadeService"/> class with required dependencies.
@@ -72,7 +77,6 @@ namespace CascadeFields.Plugin.Services
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _tracer = tracer ?? throw new ArgumentNullException(nameof(tracer));
-            _attributeMetadataCache = new Dictionary<string, AttributeMetadata>(StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -219,7 +223,8 @@ namespace CascadeFields.Plugin.Services
                 }
 
                 // Retrieve parent with needed source fields
-                var sourceFields = relatedConfig.FieldMappings?.Select(m => m.SourceField).Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? Array.Empty<string>();
+                var entityAttributes = GetEntityAttributes(config.ParentEntity);
+                var sourceFields = ExpandSourceFields(relatedConfig.FieldMappings, entityAttributes);
                 if (sourceFields.Length == 0)
                 {
                     _tracer.Info("No field mappings defined for child; skipping this mapping set.");
@@ -232,11 +237,12 @@ namespace CascadeFields.Plugin.Services
                 var values = new Dictionary<string, object>();
                 foreach (var mapping in relatedConfig.FieldMappings)
                 {
-                    if (!parent.Contains(mapping.SourceField))
+                    if (!TryGetRawSourceValue(parent, mapping.SourceField, out var rawValue, out var formattedValue))
                     {
                         continue;
                     }
-                    var mapped = GetMappedValueForTarget(parent, mapping, relatedConfig.EntityName);
+
+                    var mapped = GetMappedValueForTarget(rawValue, formattedValue, mapping, relatedConfig.EntityName);
                     values[mapping.TargetField] = mapped;
                 }
 
@@ -547,15 +553,15 @@ namespace CascadeFields.Plugin.Services
             foreach (var mapping in relatedEntityConfig.FieldMappings)
             {
                 // Prefer target over preImage
-                if (target.Contains(mapping.SourceField))
+                if (TryGetRawSourceValue(target, mapping.SourceField, out var rawValue, out var formattedValue))
                 {
-                    var mappedValue = GetMappedValueForTarget(target, mapping, relatedEntityConfig.EntityName);
+                    var mappedValue = GetMappedValueForTarget(rawValue, formattedValue, mapping, relatedEntityConfig.EntityName);
                     values[mapping.TargetField] = mappedValue;
                     _tracer.Debug($"Mapping: {mapping.SourceField} -> {mapping.TargetField} = {mappedValue}");
                 }
-                else if (preImage != null && preImage.Contains(mapping.SourceField))
+                else if (preImage != null && TryGetRawSourceValue(preImage, mapping.SourceField, out rawValue, out formattedValue))
                 {
-                    var mappedValue = GetMappedValueForTarget(preImage, mapping, relatedEntityConfig.EntityName);
+                    var mappedValue = GetMappedValueForTarget(rawValue, formattedValue, mapping, relatedEntityConfig.EntityName);
                     values[mapping.TargetField] = mappedValue;
                     _tracer.Debug($"Mapping (from preImage): {mapping.SourceField} -> {mapping.TargetField} = {mappedValue}");
                 }
@@ -593,10 +599,16 @@ namespace CascadeFields.Plugin.Services
         /// </remarks>
         private object GetMappedValueForTarget(Entity sourceEntity, FieldMapping mapping, string targetEntityName)
         {
-            var mappedValue = sourceEntity[mapping.SourceField];
-            var formattedValue = sourceEntity.FormattedValues != null && sourceEntity.FormattedValues.Contains(mapping.SourceField)
-                ? sourceEntity.FormattedValues[mapping.SourceField]
-                : null;
+            if (!TryGetRawSourceValue(sourceEntity, mapping.SourceField, out var mappedValue, out var formattedValue))
+            {
+                return null;
+            }
+
+            return GetMappedValueForTarget(mappedValue, formattedValue, mapping, targetEntityName);
+        }
+
+        private object GetMappedValueForTarget(object mappedValue, string formattedValue, FieldMapping mapping, string targetEntityName)
+        {
 
             var targetAttributeMetadata = GetTargetAttributeMetadata(targetEntityName, mapping.TargetField);
             var targetAttributeType = targetAttributeMetadata?.AttributeType;
@@ -613,6 +625,196 @@ namespace CascadeFields.Plugin.Services
             }
 
             return mappedValue;
+        }
+
+        private static bool TryGetRawSourceValue(Entity sourceEntity, string sourceField, out object rawValue, out string formattedValue)
+        {
+            rawValue = null;
+            formattedValue = null;
+
+            if (sourceEntity == null || string.IsNullOrWhiteSpace(sourceField))
+            {
+                return false;
+            }
+
+            if (sourceEntity.Contains(sourceField))
+            {
+                rawValue = sourceEntity[sourceField];
+                formattedValue = sourceEntity.FormattedValues != null && sourceEntity.FormattedValues.Contains(sourceField)
+                    ? sourceEntity.FormattedValues[sourceField]
+                    : null;
+                return true;
+            }
+
+            // Handle logical/virtual "...name" fields by deriving from the base attribute.
+            // Examples:
+            // - Lookups: parentcustomeridname -> parentcustomerid (EntityReference.Name / formatted value)
+            // - Option/Status: statuscodename -> statuscode (FormattedValues label)
+            if (TryGetCompanionNameBaseField(sourceField, out var baseField) && sourceEntity.Contains(baseField))
+            {
+                rawValue = sourceEntity[baseField];
+                formattedValue = sourceEntity.FormattedValues != null && sourceEntity.FormattedValues.Contains(baseField)
+                    ? sourceEntity.FormattedValues[baseField]
+                    : null;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Determines if a field name represents a companion "name" field (virtual runtime field) and extracts the base field name.
+        /// </summary>
+        /// <param name="fieldName">The field name to check (e.g., "cai_modename", "statuscodename", "parentcustomeridname")</param>
+        /// <param name="baseField">
+        /// When this method returns true, contains the base field name with the "name" suffix removed.
+        /// For example: "cai_modename" → "cai_mode", "statuscodename" → "statuscode"
+        /// </param>
+        /// <returns>
+        /// <c>true</c> if the field name ends with "name" and has additional characters before it;
+        /// otherwise, <c>false</c>.
+        /// </returns>
+        /// <remarks>
+        /// <para><b>Companion Name Fields:</b></para>
+        /// Dataverse provides virtual "...name" attributes at runtime for certain field types:
+        /// <list type="bullet">
+        ///     <item><description><b>Choice (OptionSet) Fields:</b> The base field (e.g., "cai_mode") contains an OptionSetValue.
+        ///     The companion field (e.g., "cai_modename") provides the text label of the selected option.
+        ///     This is also available via FormattedValues["cai_mode"].</description></item>
+        ///     <item><description><b>Lookup Fields:</b> The base field (e.g., "parentcustomerid") contains an EntityReference.
+        ///     The companion field (e.g., "parentcustomeridname") provides the Name property of the referenced record.
+        ///     This is also available via EntityReference.Name or FormattedValues["parentcustomerid"].</description></item>
+        ///     <item><description><b>Status/State Fields:</b> Similar to choice fields, statuscodename provides the label for statuscode.</description></item>
+        /// </list>
+        ///
+        /// <para><b>Important Notes:</b></para>
+        /// <list type="bullet">
+        ///     <item><description>These companion fields do NOT appear in entity metadata - they're runtime-only attributes</description></item>
+        ///     <item><description>You cannot request them in a ColumnSet - you must request the base field</description></item>
+        ///     <item><description>The FormattedValues collection is automatically populated when you retrieve the base field</description></item>
+        /// </list>
+        ///
+        /// <para><b>Usage in CascadeFields:</b></para>
+        /// When a user configures a mapping like sourceField="cai_modename", this method identifies it as a virtual field
+        /// and returns baseField="cai_mode". The plugin then:
+        /// <list type="number">
+        ///     <item><description>Retrieves the parent entity with "cai_mode" in the ColumnSet</description></item>
+        ///     <item><description>Extracts the value using the FormattedValues collection or OptionSetValue</description></item>
+        ///     <item><description>Converts it to text for assignment to the target field</description></item>
+        /// </list>
+        /// </remarks>
+        private static bool TryGetCompanionNameBaseField(string fieldName, out string baseField)
+        {
+            baseField = null;
+
+            if (string.IsNullOrWhiteSpace(fieldName))
+            {
+                return false;
+            }
+
+            // Check if field ends with "name" and has at least one character before it
+            // Examples: "statuscodename" → valid, "name" → invalid (too short)
+            if (!fieldName.EndsWith("name", StringComparison.OrdinalIgnoreCase) || fieldName.Length <= 4)
+            {
+                return false;
+            }
+
+            // Extract base field by removing the "name" suffix
+            baseField = fieldName.Substring(0, fieldName.Length - 4);
+            
+            return !string.IsNullOrWhiteSpace(baseField);
+        }
+
+        private string[] ExpandSourceFields(IEnumerable<FieldMapping> mappings, IReadOnlyDictionary<string, AttributeMetadata> entityAttributes)
+        {
+            if (mappings == null)
+            {
+                return Array.Empty<string>();
+            }
+
+            var fields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var mapping in mappings)
+            {
+                if (string.IsNullOrWhiteSpace(mapping?.SourceField))
+                {
+                    continue;
+                }
+
+                // Check if this is a companion "name" field (e.g., cai_modename, statuscodename)
+                // These are virtual/runtime fields that don't exist in metadata but are derived from the base field
+                if (TryGetCompanionNameBaseField(mapping.SourceField, out var baseFieldFromName))
+                {
+                    // Add the base field instead of the virtual name field
+                    // This ensures we retrieve the actual attribute (which populates FormattedValues)
+                    fields.Add(baseFieldFromName);
+                    continue;
+                }
+
+                // If the configured source is a logical/virtual companion field (e.g., lookup "...name"),
+                // don't request the virtual column (can fail on Retrieve). Request the base attribute instead.
+                if (entityAttributes != null &&
+                    entityAttributes.TryGetValue(mapping.SourceField, out var sourceMeta) &&
+                    sourceMeta != null &&
+                    sourceMeta.IsLogical.GetValueOrDefault() &&
+                    !string.IsNullOrWhiteSpace(sourceMeta.AttributeOf))
+                {
+                    fields.Add(sourceMeta.AttributeOf);
+                    continue;
+                }
+
+                fields.Add(mapping.SourceField);
+            }
+
+            return fields.ToArray();
+        }
+
+        private IReadOnlyDictionary<string, AttributeMetadata> GetEntityAttributes(string entityLogicalName)
+        {
+            if (string.IsNullOrWhiteSpace(entityLogicalName))
+            {
+                return new Dictionary<string, AttributeMetadata>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            if (_entityAttributesCache.TryGetValue(entityLogicalName, out var cached))
+            {
+                return cached;
+            }
+
+            try
+            {
+                var request = new RetrieveEntityRequest
+                {
+                    LogicalName = entityLogicalName,
+                    EntityFilters = EntityFilters.Attributes,
+                    RetrieveAsIfPublished = true
+                };
+
+                var response = (RetrieveEntityResponse)_service.Execute(request);
+                var dict = new Dictionary<string, AttributeMetadata>(StringComparer.OrdinalIgnoreCase);
+                var attrs = response?.EntityMetadata?.Attributes ?? Array.Empty<AttributeMetadata>();
+                foreach (var a in attrs)
+                {
+                    if (a == null || string.IsNullOrWhiteSpace(a.LogicalName))
+                    {
+                        continue;
+                    }
+
+                    // Keep first occurrence; keys are case-insensitive.
+                    if (!dict.ContainsKey(a.LogicalName))
+                    {
+                        dict[a.LogicalName] = a;
+                    }
+                }
+
+                _entityAttributesCache.TryAdd(entityLogicalName, dict);
+                return dict;
+            }
+            catch (Exception ex)
+            {
+                _tracer.Warning($"Unable to retrieve entity metadata for {entityLogicalName} (attribute list): {ex.Message}");
+                return new Dictionary<string, AttributeMetadata>(StringComparer.OrdinalIgnoreCase);
+            }
         }
 
         /// <summary>
@@ -803,7 +1005,7 @@ namespace CascadeFields.Plugin.Services
                 }
 
                 // Update related records using batched ExecuteMultiple for performance
-                UpdateRelatedRecordsBatch(relatedRecords, values);
+                UpdateRelatedRecordsBatch(relatedRecords, values, config.BypassCustomPluginExecution);
                 _tracer.EndOperation($"CascadeToRelatedEntity-{relatedConfig.EntityName}");
             }
             catch (Exception ex)
@@ -839,6 +1041,11 @@ namespace CascadeFields.Plugin.Services
                 _tracer.Debug($"Executing query for {relatedConfig.EntityName}");
                 var results = _service.RetrieveMultiple(query);
 
+                if (results.Entities.Count >= 5000)
+                {
+                    _tracer.Warning($"Query returned {results.Entities.Count} records (the safety limit). Some child records may not have been updated. Consider using filter criteria to narrow the scope.");
+                }
+
                 _tracer.EndOperation("RetrieveRelatedRecords");
                 return results.Entities.ToList();
             }
@@ -870,7 +1077,9 @@ namespace CascadeFields.Plugin.Services
             // Prefer explicitly configured lookup when provided; fall back to heuristic
             var lookupField = !string.IsNullOrWhiteSpace(relatedConfig.LookupFieldName)
                 ? relatedConfig.LookupFieldName
-                : DetermineLookupFieldFromRelationship(relatedConfig.RelationshipName, config.ParentEntity);
+                : !string.IsNullOrWhiteSpace(relatedConfig.RelationshipName)
+                    ? DetermineLookupFieldFromRelationship(relatedConfig.RelationshipName, config.ParentEntity)
+                    : null;
             
             if (string.IsNullOrWhiteSpace(lookupField))
             {
@@ -955,10 +1164,24 @@ namespace CascadeFields.Plugin.Services
                     }
 
                     // Parse value based on type
-                    object parsedValue = ParseValue(value);
-
-                    query.Criteria.AddCondition(field, conditionOperator, parsedValue);
-                    _tracer.Debug($"Added filter: {field} {operatorStr} {value}");
+                    // For In/NotIn operators, split comma-separated values into an array
+                    if (conditionOperator == ConditionOperator.In || conditionOperator == ConditionOperator.NotIn)
+                    {
+                        var items = value.Split(',');
+                        var parsedItems = new object[items.Length];
+                        for (int i = 0; i < items.Length; i++)
+                        {
+                            parsedItems[i] = ParseValue(items[i].Trim());
+                        }
+                        query.Criteria.AddCondition(field, conditionOperator, parsedItems);
+                        _tracer.Debug($"Added filter: {field} {operatorStr} [{value}] ({items.Length} values)");
+                    }
+                    else
+                    {
+                        object parsedValue = ParseValue(value);
+                        query.Criteria.AddCondition(field, conditionOperator, parsedValue);
+                        _tracer.Debug($"Added filter: {field} {operatorStr} {value}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -1065,7 +1288,8 @@ namespace CascadeFields.Plugin.Services
         /// Errors for individual records are logged separately with record ID and error message.
         /// Successful and failed counts are tracked and reported in the final summary.
         /// </remarks>
-        private void UpdateRelatedRecordsBatch(List<Entity> relatedRecords, Dictionary<string, object> values)
+        private void UpdateRelatedRecordsBatch(List<Entity> relatedRecords, Dictionary<string, object> values,
+            bool bypassCustomPluginExecution = false)
         {
             const int batchSize = 50; // Optimal batch size for ExecuteMultiple
             var requests = new OrganizationRequestCollection();
@@ -1083,7 +1307,16 @@ namespace CascadeFields.Plugin.Services
                     updateEntity[kvp.Key] = kvp.Value;
                 }
 
-                requests.Add(new UpdateRequest { Target = updateEntity });
+                var updateRequest = new UpdateRequest { Target = updateEntity };
+                
+                // Only bypass custom plugin execution when explicitly opted in via configuration.
+                // Requires the executing user to hold the prvBypassCustomPluginExecution privilege.
+                if (bypassCustomPluginExecution)
+                {
+                    updateRequest.Parameters["BypassCustomPluginExecution"] = true;
+                }
+                
+                requests.Add(updateRequest);
 
                 // Execute batch when we reach batch size or this is the last record
                 if (requests.Count >= batchSize || processedCount + requests.Count >= relatedRecords.Count)

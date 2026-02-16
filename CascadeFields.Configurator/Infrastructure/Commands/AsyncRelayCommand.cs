@@ -189,6 +189,10 @@ namespace CascadeFields.Configurator.Infrastructure.Commands
             {
                 await _execute(parameter);
             }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"AsyncRelayCommand execution failed: {ex}");
+            }
             finally
             {
                 _isExecuting = false;

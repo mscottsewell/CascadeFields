@@ -71,6 +71,7 @@ namespace CascadeFields.Configurator.Controls
         {
             InitializeComponent();
             splitContainerMain.SizeChanged += (s, e) => SetMainSplitterDistance();
+            tabConfiguration.SizeChanged += (_, __) => UpdateConfigurationCheckboxWrap();
         }
 
         /// <summary>
@@ -138,6 +139,35 @@ namespace CascadeFields.Configurator.Controls
             base.OnLoad(e);
             EnsureInitialized();
             SetMainSplitterDistance();
+            UpdateConfigurationCheckboxWrap();
+        }
+
+        private void UpdateConfigurationCheckboxWrap()
+        {
+            if (tabConfiguration == null)
+                return;
+
+            // Ensure checkbox labels can wrap when the left panel is narrow.
+            // Using MaximumSize with AutoSize allows WinForms to word-wrap the text.
+            var maxWidth = tabConfiguration.ClientSize.Width - 24;
+            if (maxWidth < 120)
+                maxWidth = 120;
+
+            SetCheckboxWrap(chkIsActive, maxWidth);
+            SetCheckboxWrap(chkCascadeOnParentUpdate, maxWidth);
+            SetCheckboxWrap(chkCascadeOnChildCreate, maxWidth);
+            SetCheckboxWrap(chkCascadeOnChildRelink, maxWidth);
+            SetCheckboxWrap(chkDeleteAsyncOperationIfSuccessful, maxWidth);
+            SetCheckboxWrap(chkEnableTracing, maxWidth);
+        }
+
+        private static void SetCheckboxWrap(CheckBox checkbox, int maxWidth)
+        {
+            if (checkbox == null)
+                return;
+
+            checkbox.AutoSize = true;
+            checkbox.MaximumSize = new Size(maxWidth, 0);
         }
 
         /// <summary>
@@ -449,6 +479,12 @@ namespace CascadeFields.Configurator.Controls
                     chkIsActive.Checked = _viewModel.IsActive;
                 if (e.PropertyName == nameof(ConfigurationViewModel.DeleteAsyncOperationIfSuccessful))
                     chkDeleteAsyncOperationIfSuccessful.Checked = _viewModel.DeleteAsyncOperationIfSuccessful;
+                if (e.PropertyName == nameof(ConfigurationViewModel.CascadeOnParentUpdate))
+                    chkCascadeOnParentUpdate.Checked = _viewModel.CascadeOnParentUpdate;
+                if (e.PropertyName == nameof(ConfigurationViewModel.CascadeOnChildCreate))
+                    chkCascadeOnChildCreate.Checked = _viewModel.CascadeOnChildCreate;
+                if (e.PropertyName == nameof(ConfigurationViewModel.CascadeOnChildRelink))
+                    chkCascadeOnChildRelink.Checked = _viewModel.CascadeOnChildRelink;
                 if (e.PropertyName == nameof(ConfigurationViewModel.IsBulkLoadingParentEntities) && !_viewModel.IsBulkLoadingParentEntities)
                 {
                     RefreshParentEntities();
@@ -527,6 +563,15 @@ namespace CascadeFields.Configurator.Controls
 
             chkDeleteAsyncOperationIfSuccessful.CheckedChanged -= ChkDeleteAsyncOperationIfSuccessful_CheckedChanged;
             chkDeleteAsyncOperationIfSuccessful.CheckedChanged += ChkDeleteAsyncOperationIfSuccessful_CheckedChanged;
+
+            chkCascadeOnParentUpdate.CheckedChanged -= ChkCascadeOnParentUpdate_CheckedChanged;
+            chkCascadeOnParentUpdate.CheckedChanged += ChkCascadeOnParentUpdate_CheckedChanged;
+
+            chkCascadeOnChildCreate.CheckedChanged -= ChkCascadeOnChildCreate_CheckedChanged;
+            chkCascadeOnChildCreate.CheckedChanged += ChkCascadeOnChildCreate_CheckedChanged;
+
+            chkCascadeOnChildRelink.CheckedChanged -= ChkCascadeOnChildRelink_CheckedChanged;
+            chkCascadeOnChildRelink.CheckedChanged += ChkCascadeOnChildRelink_CheckedChanged;
 
             // Initialize UI
             lblStatus.Text = _viewModel.StatusMessage;
@@ -862,6 +907,24 @@ namespace CascadeFields.Configurator.Controls
         {
             if (_viewModel != null)
                 _viewModel.DeleteAsyncOperationIfSuccessful = chkDeleteAsyncOperationIfSuccessful.Checked;
+        }
+
+        private void ChkCascadeOnParentUpdate_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (_viewModel != null)
+                _viewModel.CascadeOnParentUpdate = chkCascadeOnParentUpdate.Checked;
+        }
+
+        private void ChkCascadeOnChildCreate_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (_viewModel != null)
+                _viewModel.CascadeOnChildCreate = chkCascadeOnChildCreate.Checked;
+        }
+
+        private void ChkCascadeOnChildRelink_CheckedChanged(object? sender, EventArgs e)
+        {
+            if (_viewModel != null)
+                _viewModel.CascadeOnChildRelink = chkCascadeOnChildRelink.Checked;
         }
 
         /// <summary>

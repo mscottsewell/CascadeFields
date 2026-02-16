@@ -32,6 +32,9 @@ namespace CascadeFields.Configurator.Controls
         private TextBox txtJsonPreview;
         private CheckBox chkEnableTracing;
         private CheckBox chkIsActive;
+        private CheckBox chkCascadeOnParentUpdate;
+        private CheckBox chkCascadeOnChildCreate;
+        private CheckBox chkCascadeOnChildRelink;
         private CheckBox chkDeleteAsyncOperationIfSuccessful;
         private Label lblStatus;
 
@@ -101,6 +104,9 @@ namespace CascadeFields.Configurator.Controls
             chkIsActive = new CheckBox();
             chkDeleteAsyncOperationIfSuccessful = new CheckBox();
             chkEnableTracing = new CheckBox();
+            chkCascadeOnParentUpdate = new CheckBox();
+            chkCascadeOnChildCreate = new CheckBox();
+            chkCascadeOnChildRelink = new CheckBox();
             lblStatus = new Label();
             ribbonPanel.SuspendLayout();
             ((ISupportInitialize)splitContainerMain).BeginInit();
@@ -239,16 +245,20 @@ namespace CascadeFields.Configurator.Controls
                 ColumnCount = 2,
                 Dock = DockStyle.Fill,
                 AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 Padding = new Padding(4)
             };
             configLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 35F));
             configLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 65F));
-            configLayout.RowCount = 5;  // Solution, Parent Entity, Active, Delete Async, Enable Tracing
+            configLayout.RowCount = 8;  // Solution, Parent Entity, Active, Delete Async, Enable Tracing, Cascade toggles (3)
             configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
             configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35F));
-            configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
-            configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
-            configLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            configLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
             // Add controls to layout
             configLayout.Controls.Add(lblSolution, 0, 0);
@@ -262,6 +272,12 @@ namespace CascadeFields.Configurator.Controls
             configLayout.Controls.Add(chkDeleteAsyncOperationIfSuccessful, 0, 3);
             configLayout.SetColumnSpan(chkDeleteAsyncOperationIfSuccessful, 2);
             configLayout.Controls.Add(chkEnableTracing, 0, 4);
+            configLayout.Controls.Add(chkCascadeOnParentUpdate, 0, 5);
+            configLayout.SetColumnSpan(chkCascadeOnParentUpdate, 2);
+            configLayout.Controls.Add(chkCascadeOnChildCreate, 0, 6);
+            configLayout.SetColumnSpan(chkCascadeOnChildCreate, 2);
+            configLayout.Controls.Add(chkCascadeOnChildRelink, 0, 7);
+            configLayout.SetColumnSpan(chkCascadeOnChildRelink, 2);
             configLayout.SetColumnSpan(chkEnableTracing, 2);
 
             tabConfiguration.Controls.Add(configLayout);
@@ -293,6 +309,33 @@ namespace CascadeFields.Configurator.Controls
             //
             cmbParentEntity.Anchor = AnchorStyles.Left | AnchorStyles.Right;
             cmbParentEntity.DropDownStyle = ComboBoxStyle.DropDownList;
+
+            //
+            // chkCascadeOnParentUpdate
+            //
+            chkCascadeOnParentUpdate.Text = "Cascade on Parent changes (Update)";
+            chkCascadeOnParentUpdate.AutoSize = true;
+            chkCascadeOnParentUpdate.Checked = true;
+            chkCascadeOnParentUpdate.Padding = new Padding(4);
+            chkCascadeOnParentUpdate.Margin = new Padding(0, 5, 0, 0);
+
+            //
+            // chkCascadeOnChildCreate
+            //
+            chkCascadeOnChildCreate.Text = "Cascade on new Child records (Create)";
+            chkCascadeOnChildCreate.AutoSize = true;
+            chkCascadeOnChildCreate.Checked = true;
+            chkCascadeOnChildCreate.Padding = new Padding(4);
+            chkCascadeOnChildCreate.Margin = new Padding(0, 5, 0, 0);
+
+            //
+            // chkCascadeOnChildRelink
+            //
+            chkCascadeOnChildRelink.Text = "Cascade when Child association changes (Relink)";
+            chkCascadeOnChildRelink.AutoSize = true;
+            chkCascadeOnChildRelink.Checked = true;
+            chkCascadeOnChildRelink.Padding = new Padding(4);
+            chkCascadeOnChildRelink.Margin = new Padding(0, 5, 0, 0);
 
             // 
             // tabLog

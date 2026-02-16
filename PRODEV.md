@@ -85,7 +85,21 @@ Child-side population/relink:
 - **Primary entity**: each configured child entity (e.g., `contact`)
 - **Stage**: Pre-operation (20)
 - **Mode**: Synchronous (required so values are applied in-transaction)
-- **Filtering attributes**: include only the lookup field that references the parent entity (so only relinks trigger on `Update`)
+- **Filtering attributes**: include only the lookup field that references the parent entity
+  (so only relinks trigger on `Update`)
+
+### Trigger Toggles (Optional)
+
+CascadeFields also supports per-parent toggles to control which triggers are active:
+
+- `cascadeOnParentUpdate` (Parent Update)
+- `cascadeOnChildCreate` (Child Create)
+- `cascadeOnChildRelink` (Child Update / relink)
+
+If you are doing manual registration, you can:
+
+- Disable the corresponding step(s), and/or
+- Set these flags to `false` in the step Unsecure Configuration JSON (the plug-in will early-exit).
 
 ### Recommended Registration Notes
 
@@ -105,7 +119,8 @@ To actually **store and view** Dataverse traces, the environment setting **Plug-
 
 To view Plug-in Trace Logs:
 
-- **Modern**: Power Platform admin center → Environments → (your environment) → Settings → Plug-in trace log / Plug-in trace logs
+- **Modern**: Power Platform admin center → Environments → (your environment) → Settings
+  → Plug-in trace log / Plug-in trace logs
 - **Classic (legacy UI)**: Dataverse **Settings** → **Customizations** → **Plug-in Trace Log**
 
 ## Contributing

@@ -230,6 +230,10 @@ namespace CascadeFields.Configurator.ViewModels
 
         private bool _deleteAsyncOperationIfSuccessful = true;
 
+        private bool _cascadeOnParentUpdate = true;
+        private bool _cascadeOnChildCreate = true;
+        private bool _cascadeOnChildRelink = true;
+
         /// <summary>
         /// Whether successful async operations should be automatically deleted.
         /// When true, the parent update step (async) will automatically delete its AsyncOperation record upon successful completion.
@@ -241,6 +245,54 @@ namespace CascadeFields.Configurator.ViewModels
             set
             {
                 if (SetProperty(ref _deleteAsyncOperationIfSuccessful, value))
+                {
+                    UpdateJsonPreview();
+                    ScheduleSave();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When true, cascades run when the parent record is updated (Parent Update step).
+        /// </summary>
+        public bool CascadeOnParentUpdate
+        {
+            get => _cascadeOnParentUpdate;
+            set
+            {
+                if (SetProperty(ref _cascadeOnParentUpdate, value))
+                {
+                    UpdateJsonPreview();
+                    ScheduleSave();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When true, cascades run when a child record is created (Child Create step).
+        /// </summary>
+        public bool CascadeOnChildCreate
+        {
+            get => _cascadeOnChildCreate;
+            set
+            {
+                if (SetProperty(ref _cascadeOnChildCreate, value))
+                {
+                    UpdateJsonPreview();
+                    ScheduleSave();
+                }
+            }
+        }
+
+        /// <summary>
+        /// When true, cascades run when a child record changes association to the parent (Child Relink step).
+        /// </summary>
+        public bool CascadeOnChildRelink
+        {
+            get => _cascadeOnChildRelink;
+            set
+            {
+                if (SetProperty(ref _cascadeOnChildRelink, value))
                 {
                     UpdateJsonPreview();
                     ScheduleSave();
@@ -429,13 +481,15 @@ namespace CascadeFields.Configurator.ViewModels
                 if (Solutions.Count == 0)
                     return;
 
-                // Select the saved solution
-                SelectedSolution = Solutions.FirstOrDefault(s => s.UniqueName == session.SolutionUniqueName);
-                if (SelectedSolution == null)
+                // Select the saved solution — set backing field directly and await entity loading
+                // to avoid the fire-and-forget call from the property setter
+                _selectedSolution = Solutions.FirstOrDefault(s => s.UniqueName == session.SolutionUniqueName);
+                OnPropertyChanged(nameof(SelectedSolution));
+                if (_selectedSolution == null)
                     return;
 
-                // Load parent entities (triggered by SelectedSolution change)
-                await Task.Delay(500); // Wait for entities to load
+                // Load parent entities and await completion
+                await OnSolutionChangedAsync();
 
                 // Select parent entity directly (skip property setter to avoid OnParentEntityChangedAsync)
                 var parentEntity = ParentEntities.FirstOrDefault(
@@ -842,6 +896,9 @@ namespace CascadeFields.Configurator.ViewModels
                 EnableTracing = config.EnableTracing;
                 IsActive = config.IsActive;
                 DeleteAsyncOperationIfSuccessful = config.DeleteAsyncOperationIfSuccessful;
+                CascadeOnParentUpdate = config.CascadeOnParentUpdate;
+                CascadeOnChildCreate = config.CascadeOnChildCreate;
+                CascadeOnChildRelink = config.CascadeOnChildRelink;
 
                 UpdateJsonPreview();
                 if (markAsPublished)
@@ -1330,6 +1387,9 @@ namespace CascadeFields.Configurator.ViewModels
                 IsActive = IsActive,
                 EnableTracing = EnableTracing,
                 DeleteAsyncOperationIfSuccessful = DeleteAsyncOperationIfSuccessful,
+                CascadeOnParentUpdate = CascadeOnParentUpdate,
+                CascadeOnChildCreate = CascadeOnChildCreate,
+                CascadeOnChildRelink = CascadeOnChildRelink,
                 RelatedEntities = RelationshipTabs
                     .Where(t => t.SelectedRelationship != null)
                     .Select(t => t.ToRelatedEntityConfig())

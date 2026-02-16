@@ -1,0 +1,82 @@
+{
+  "id": "08aef22a-78e9-4f0d-b5eb-af271c40fa69",
+  "name": "cai_area cascade configuration",
+  "parentEntity": "cai_area",
+  "isActive": true,
+  "enableTracing": true,
+  "deleteAsyncOperationIfSuccessful": true,
+  "cascadeOnParentUpdate": true,
+  "cascadeOnChildCreate": true,
+  "cascadeOnChildRelink": true,
+  "relatedEntities": [
+    {
+      "entityName": "cai_allocation",
+      "relationshipName": "cai_allocation_AreaId_cai_area",
+      "useRelationship": true,
+      "lookupFieldName": "cai_areaid",
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "cai_area",
+          "targetField": "cai_area",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_area_l1",
+          "targetField": "cai_area_l1",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_area_l2",
+          "targetField": "cai_area_l2",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_area_l3",
+          "targetField": "cai_area_l3",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_area_l4",
+          "targetField": "cai_area_l4",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_area_l5",
+          "targetField": "cai_area_l5",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_area_l6",
+          "targetField": "cai_area_l6",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_area_l7",
+          "targetField": "cai_area_l7",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_area_l8",
+          "targetField": "cai_area_l8",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_area_l9",
+          "targetField": "cai_area_l9",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_mode",
+          "targetField": "cai_modecode",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "cai_level",
+          "targetField": "cai_allocationpercentageotherareas",
+          "isTriggerField": true
+        }
+      ]
+    }
+  ]
+}

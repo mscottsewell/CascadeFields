@@ -1,0 +1,32 @@
+{
+  "id": "choice-name-to-text-example",
+  "name": "Map Choice Field Names to Text Fields",
+  "parentEntity": "account",
+  "isActive": true,
+  "enableTracing": true,
+  "deleteAsyncOperationIfSuccessful": true,
+  "cascadeOnParentUpdate": true,
+  "cascadeOnChildCreate": true,
+  "cascadeOnChildRelink": true,
+  "relatedEntities": [
+    {
+      "entityName": "contact",
+      "relationshipName": "contact_customer_accounts",
+      "useRelationship": true,
+      "lookupFieldName": "parentcustomerid",
+      "filterCriteria": "statecode|eq|0",
+      "fieldMappings": [
+        {
+          "sourceField": "industrycodename",
+          "targetField": "description",
+          "isTriggerField": true
+        },
+        {
+          "sourceField": "accountratingcodename",
+          "targetField": "jobtitle",
+          "isTriggerField": true
+        }
+      ]
+    }
+  ]
+}

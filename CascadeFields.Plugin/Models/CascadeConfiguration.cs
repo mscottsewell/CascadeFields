@@ -118,6 +118,43 @@ namespace CascadeFields.Plugin.Models
         public bool EnableTracing { get; set; }
 
         /// <summary>
+        /// When true, cascades run when the parent record is updated (Parent Update step).
+        /// </summary>
+        [DataMember]
+        [JsonProperty("cascadeOnParentUpdate")]
+        public bool CascadeOnParentUpdate { get; set; }
+
+        /// <summary>
+        /// When true, cascades run when a child record is created (Child Create step).
+        /// </summary>
+        [DataMember]
+        [JsonProperty("cascadeOnChildCreate")]
+        public bool CascadeOnChildCreate { get; set; }
+
+        /// <summary>
+        /// When true, cascades run when a child record changes association to the parent (Child Relink step).
+        /// This corresponds to the child Update (PreOperation) step filtered to the parent lookup field(s).
+        /// </summary>
+        [DataMember]
+        [JsonProperty("cascadeOnChildRelink")]
+        public bool CascadeOnChildRelink { get; set; }
+
+        /// <summary>
+        /// When true, child update requests include the BypassCustomPluginExecution flag to skip
+        /// downstream custom plugins and workflows on child records during cascade operations.
+        /// </summary>
+        /// <remarks>
+        /// <para><b>Default:</b> <c>false</c> — child updates run through the normal Dataverse plugin pipeline.</para>
+        /// <para><b>Requirement:</b> The executing user must hold the <c>prvBypassCustomPluginExecution</c> privilege
+        /// (typically System Administrator) for this flag to work. If the user lacks this privilege, the update will fail.</para>
+        /// <para><b>Use with caution:</b> Enabling this skips all custom plugins, workflows, and business rules on
+        /// the child entity updates.</para>
+        /// </remarks>
+        [DataMember]
+        [JsonProperty("bypassCustomPluginExecution")]
+        public bool BypassCustomPluginExecution { get; set; }
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="CascadeConfiguration"/> class with default values.
         /// </summary>
         /// <remarks>
@@ -133,6 +170,9 @@ namespace CascadeFields.Plugin.Models
             RelatedEntities = new List<RelatedEntityConfig>();
             IsActive = true;
             EnableTracing = true;
+            CascadeOnParentUpdate = true;
+            CascadeOnChildCreate = true;
+            CascadeOnChildRelink = true;
         }
 
         /// <summary>

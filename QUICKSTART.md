@@ -85,8 +85,7 @@ The toolbar ribbon at the top of the Configurator contains the following buttons
 
 | Button | Purpose |
 | --- | --- |
-| **Retrieve Configured Entity** | Load saved config from Dataverse. |
-|  | Auto-loads single parent; prompts if multiple. |
+| **Retrieve Configured Entity** | Load saved config from Dataverse. Auto-loads single parent; prompts if multiple. |
 | **Export JSON** | Save the current configuration to a JSON file for backup, sharing, or version control. |
 | **Import JSON** | Load a configuration from a JSON file. Useful for restoring backups during configuration testing. |
 | **Add Relationship** | Add a new child entity relationship to the current parent entity configuration. Opens a dialog to select the child entity and lookup field. |
@@ -108,22 +107,29 @@ The left pane is organized into three tabs:
 - **Solution Selector:** Dropdown to choose the unmanaged solution where plugin components will be added.
 - **Parent Entity Selector:** Dropdown to select the parent entity to configure. Filters to entities in the selected solution.
 
-Below these controls are three important checkboxes:
+Below these controls are configuration checkboxes:
 
 | Checkbox | Description | Recommendation |
 | --- | --- | --- |
 | **Is Active** | When checked, the configuration is active and the plugin will process cascades. | Uncheck and publish to temporarily disable cascading without removing the configuration. |
+| **Cascade on Parent changes (Update)** | When checked, cascades run when the parent record is updated. | Leave enabled in most cases; disable to prevent parent updates from affecting existing children. |
+| **Cascade on new Child records (Create)** | When checked, parent values are applied when a child record is created with a parent lookup. | Leave enabled to populate values at create time; disable if you only want cascades on parent updates. |
+| **Cascade when Child association changes (Relink)** | When checked, parent values are applied when a child record is relinked to a different parent (child Update filtered to the lookup). | Leave enabled to keep relinks consistent; disable if relinks should not modify mapped fields. |
 | **Auto-delete Successful System Jobs** | Automatically deletes successful async operations (parent update step) from System Jobs to prevent System Job storage bloat. (Only applies to parent step since child steps run synchronously.) | Disable during development/testing to monitor successful jobs; enable in production to avoid System Job bloat. |
-| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution.  | Enable during development/testing; disable in production to reduce log volume and improve performance. |
+| **Enable Detailed Tracing** | When checked, the plugin writes verbose trace logs for every execution. | Enable during development/testing; disable in production to reduce log volume and improve performance. |
 
-> **Important: The Enable Detailed Tracing** checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have **Plug-in trace log** enabled (see “View Plugin Trace Logs” below).
+> **Important: The Enable Detailed Tracing** checkbox only controls how much the plug-in writes to Dataverse
+> tracing (`ITracingService`). To actually capture and view these traces, your Dataverse environment must have
+> **Plug-in trace log** enabled (see “View Plugin Trace Logs” below).
 
 ### Right Pane
 
 The right pane shows a tab for each configured child relationship. Each tab contains:
 
-- **Field Mappings Grid** (top) - Map source fields from the parent to target fields on the child. Check "Trigger Field" for fields that should initiate cascades when changed.
-- **Filter Criteria Grid** (bottom) - Define conditions to limit which child records receive updates (e.g., only active records).
+- **Field Mappings Grid** (top) - Map source fields from the parent to target fields on the child.
+  Check "Trigger Field" for fields that should initiate cascades when changed.
+- **Filter Criteria Grid** (bottom) - Define conditions to limit which child records receive updates
+  (e.g., only active records).
 
 ## Retrieve Configured Entity
 
@@ -136,7 +142,8 @@ To load an existing configuration:
    - Click a parent row (or any of its child rows) to select it
    - Click **OK** to load the complete configuration
 
-> **Tip:** When you select a parent entity from the dropdown, any existing configuration for that entity loads automatically. If no child relationships exist, you'll be prompted to add one.
+> **Tip:** When you select a parent entity from the dropdown, any existing configuration for that entity
+> loads automatically. If no child relationships exist, you'll be prompted to add one.
 
 ## Test It
 
@@ -167,10 +174,14 @@ To load an existing configuration:
 
 Plugin trace logs are your best tool for debugging and understanding what CascadeFields is doing.
 
-> **Important (Org Setting Required):** The Configurator's **Enable Detailed Tracing** checkbox only controls how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view trace logs, your Dataverse environment must have **Plug-in trace log** enabled (recommended while troubleshooting: **All**).
+> **Important (Org Setting Required):** The Configurator's **Enable Detailed Tracing** checkbox only controls
+> how much the plug-in writes to Dataverse tracing (`ITracingService`). To actually capture and view trace
+> logs, your Dataverse environment must have **Plug-in trace log** enabled (recommended while troubleshooting:
+> **All**).
 
 1. In your Dataverse environment, navigate to:
-   - **Modern**: Power Platform admin center → Environments → (your environment) → Settings → Plug-in trace log / Plug-in trace logs
+   - **Modern**: Power Platform admin center → Environments → (your environment) → Settings
+     → Plug-in trace log / Plug-in trace logs
    - **Classic (legacy UI)**: **Settings** → **Customizations** → **Plug-in Trace Log**
    - Or search for "Plugin Trace Log" in the search bar
 2. Filter the view:
@@ -189,8 +200,11 @@ For more detailed logs during testing:
 1. Open your configuration in the Configurator
 2. Check the **Enable Detailed Tracing** checkbox in the Configuration tab
 3. Click **Publish Configuration and Plug-in** to apply the change
-4. This enables verbose `INFO/WARNING/DEBUG` logs for the plug-in. `ERROR` logs are always written, but may only be stored depending on your environment’s **Plug-in trace log** setting.
-5. **⚠️ Important:** Do not leave detailed tracing enabled in production environments as it impacts performance and creates excessive log records
+4. This enables verbose `INFO/WARNING/DEBUG` logs for the plug-in.
+   `ERROR` logs are always written, but may only be stored depending on your environment’s
+   **Plug-in trace log** setting.
+5. **⚠️ Important:** Do not leave detailed tracing enabled in production environments as it impacts
+   performance and creates excessive log records
 
 **Check System Jobs (for parent updates):**
 
@@ -236,7 +250,8 @@ To remove the plugin assembly and all associated steps:
 4. Right-click → **Unregister**
 5. Confirm to remove the assembly and all steps
 
-> **Note:** Always test removal in a development environment first. Removing the plugin will stop all cascade operations immediately.
+> **Note:** Always test removal in a development environment first.
+> Removing the plugin will stop all cascade operations immediately.
 
 ## Troubleshooting
 

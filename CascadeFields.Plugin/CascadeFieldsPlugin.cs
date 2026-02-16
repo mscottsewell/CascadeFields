@@ -152,6 +152,12 @@ namespace CascadeFields.Plugin
                 if (context.PrimaryEntityName.Equals(config.ParentEntity, StringComparison.OrdinalIgnoreCase)
                     && context.MessageName.Equals("Update", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (!config.CascadeOnParentUpdate)
+                    {
+                        tracer.Info("Parent Update trigger disabled by configuration (cascadeOnParentUpdate=false). Skipping.");
+                        return;
+                    }
+
                     // Parent-side cascade: ensure post-op async registration recommended
                     if (context.Stage != 40)
                     {
@@ -166,6 +172,18 @@ namespace CascadeFields.Plugin
                          (context.MessageName.Equals("Create", StringComparison.OrdinalIgnoreCase) ||
                           context.MessageName.Equals("Update", StringComparison.OrdinalIgnoreCase)))
                 {
+                    if (context.MessageName.Equals("Create", StringComparison.OrdinalIgnoreCase) && !config.CascadeOnChildCreate)
+                    {
+                        tracer.Info("Child Create trigger disabled by configuration (cascadeOnChildCreate=false). Skipping.");
+                        return;
+                    }
+
+                    if (context.MessageName.Equals("Update", StringComparison.OrdinalIgnoreCase) && !config.CascadeOnChildRelink)
+                    {
+                        tracer.Info("Child Relink trigger disabled by configuration (cascadeOnChildRelink=false). Skipping.");
+                        return;
+                    }
+
                     // Child-side handling: copy mapped values from parent → child when created or relinked
                     if (context.Stage != 20)
                     {

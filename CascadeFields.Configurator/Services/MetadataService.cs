@@ -358,20 +358,52 @@ namespace CascadeFields.Configurator.Services
                 return Enumerable.Empty<AttributeItem>();
             }
 
+            // Build a lookup for base attribute display names so we can label logical/virtual "*name" fields
+            // (e.g., lookup name fields like parentcustomeridname) as "{Base Display Name} Name".
+            var attributesByLogicalName = entity.Attributes
+                .Where(a => !string.IsNullOrWhiteSpace(a.LogicalName))
+                .GroupBy(a => a.LogicalName!, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToDictionary(a => a.LogicalName!, StringComparer.OrdinalIgnoreCase);
+
             var attributes = entity.Attributes
+                .Where(a => !string.IsNullOrWhiteSpace(a.LogicalName))
                 .Where(a => includeLogical || !a.IsLogical.GetValueOrDefault())
                 .Where(a => includeReadOnly || a.IsValidForUpdate == true)
                 .Where(a => formFields == null || formFields.Count == 0 || formFields.Contains(a.LogicalName))
                 .Select(a => new AttributeItem
                 {
                     LogicalName = a.LogicalName,
-                    DisplayName = a.DisplayName?.UserLocalizedLabel?.Label ?? a.LogicalName,
+                    DisplayName = GetDisplayName(a, attributesByLogicalName),
                     Metadata = a
                 })
                 .OrderBy(a => a.DisplayName)
                 .ToList();
 
             return attributes;
+        }
+
+        private static string GetDisplayName(AttributeMetadata attribute, IReadOnlyDictionary<string, AttributeMetadata> attributesByLogicalName)
+        {
+            var logicalName = attribute.LogicalName ?? string.Empty;
+            var displayName = attribute.DisplayName?.UserLocalizedLabel?.Label ?? logicalName;
+
+            // For logical/virtual "...name" attributes (commonly the display name / label for lookups and option sets),
+            // show them as "{Base Display Name} Name" so they sort alongside the underlying field.
+            if (attribute.IsLogical.GetValueOrDefault() &&
+                logicalName.EndsWith("name", StringComparison.OrdinalIgnoreCase) &&
+                logicalName.Length > 4)
+            {
+                var baseLogicalName = logicalName.Substring(0, logicalName.Length - 4);
+                if (!string.IsNullOrWhiteSpace(baseLogicalName) &&
+                    attributesByLogicalName.TryGetValue(baseLogicalName, out var baseAttribute))
+                {
+                    var baseDisplay = baseAttribute.DisplayName?.UserLocalizedLabel?.Label ?? baseLogicalName;
+                    return $"{baseDisplay} Name";
+                }
+            }
+
+            return displayName;
         }
 
         /// <summary>
@@ -405,6 +437,7 @@ namespace CascadeFields.Configurator.Services
             }
 
             var attributes = entity.Attributes
+                .Where(a => !string.IsNullOrWhiteSpace(a.LogicalName))
                 .Where(a => a.IsValidForUpdate == true && !a.IsLogical.GetValueOrDefault())
                 .Where(a => formFields == null || formFields.Count == 0 || formFields.Contains(a.LogicalName) || 
                            a.LogicalName == "statecode" || a.LogicalName == "statuscode")

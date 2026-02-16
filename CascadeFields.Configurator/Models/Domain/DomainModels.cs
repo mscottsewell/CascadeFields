@@ -95,6 +95,25 @@ namespace CascadeFields.Configurator.Models.Domain
         public bool DeleteAsyncOperationIfSuccessful { get; set; } = true;
 
         /// <summary>
+        /// When true, cascades run when the parent record is updated (Parent Update step).
+        /// </summary>
+        [JsonProperty("cascadeOnParentUpdate")]
+        public bool CascadeOnParentUpdate { get; set; } = true;
+
+        /// <summary>
+        /// When true, cascades run when a child record is created (Child Create step).
+        /// </summary>
+        [JsonProperty("cascadeOnChildCreate")]
+        public bool CascadeOnChildCreate { get; set; } = true;
+
+        /// <summary>
+        /// When true, cascades run when a child record changes association to the parent (Child Relink step).
+        /// This corresponds to the child Update (PreOperation) step filtered to the parent lookup field(s).
+        /// </summary>
+        [JsonProperty("cascadeOnChildRelink")]
+        public bool CascadeOnChildRelink { get; set; } = true;
+
+        /// <summary>
         /// Gets or sets the collection of related entity configurations.
         /// Each entry defines how fields cascade to a specific child entity.
         /// </summary>

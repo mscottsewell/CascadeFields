@@ -82,7 +82,7 @@ namespace CascadeFields.Configurator.Services
                             string lookupDisplay = related.LookupFieldName;
                             try
                             {
-                                var childMeta = metadataService.GetEntityMetadataAsync(related.EntityName).Result;
+                                var childMeta = metadataService.GetEntityMetadataAsync(related.EntityName).GetAwaiter().GetResult();
                                 childDisplay = childMeta?.DisplayName?.UserLocalizedLabel?.Label ?? related.EntityName;
 
                                 if (!string.IsNullOrWhiteSpace(related.LookupFieldName) && childMeta?.Attributes != null)
@@ -91,9 +91,10 @@ namespace CascadeFields.Configurator.Services
                                     lookupDisplay = attr?.DisplayName?.UserLocalizedLabel?.Label ?? related.LookupFieldName;
                                 }
                             }
-                            catch
+                            catch (Exception ex)
                             {
-                                // Ignore metadata resolution errors and fall back to logical names
+                                // Fall back to logical names; log for troubleshooting
+                                System.Diagnostics.Debug.WriteLine($"Metadata resolution error for '{related.EntityName}': {ex.Message}");
                             }
 
                             configured.Add(new ConfiguredRelationship
@@ -226,59 +227,152 @@ namespace CascadeFields.Configurator.Services
                     throw new InvalidPluginExecutionException("CascadeFields plugin type not found. Ensure the plugin is deployed to Dataverse.");
                 }
 
+                var pluginTypeId = pluginType.Id;
+
                 // Ensure sdkmessage 'Update' and filter for parent entity
                 progress.Report("Resolving SDK messages and filters...");
                 var updateMessageId = GetSdkMessageId("Update");
                 var parentFilterId = GetSdkMessageFilterId(updateMessageId, configuration.ParentEntity);
 
-                // Create or update parent step
-                var parentStepId = UpsertProcessingStep(configuration, pluginType, updateMessageId, parentFilterId, progress);
-
-                // Ensure parent preimage
-                var parentPreImageId = UpsertPreImage(parentStepId, configuration, progress);
-
-                // Add parent components to solution if specified
-                if (solutionId.HasValue && solutionId != Guid.Empty)
+                // Parent Update step (optional)
+                Guid parentStepId = Guid.Empty;
+                Guid parentPreImageId = Guid.Empty;
+                if (configuration.CascadeOnParentUpdate)
                 {
-                    progress.Report("Adding parent components to solution...");
-                    AddComponentsToSolution(pluginType, parentStepId, parentPreImageId, solutionId.Value, progress);
+                    parentStepId = UpsertProcessingStep(configuration, pluginType, updateMessageId, parentFilterId, progress);
+                    parentPreImageId = UpsertPreImage(parentStepId, configuration, progress);
+                    SetStepEnabled(parentStepId, enabled: true, progress);
+
+                    if (solutionId.HasValue && solutionId != Guid.Empty)
+                    {
+                        progress.Report("Adding parent components to solution...");
+                        AddComponentsToSolution(pluginType, parentStepId, parentPreImageId, solutionId.Value, progress);
+                    }
+                }
+                else
+                {
+                    progress.Report("Parent Update cascades disabled by configuration; ensuring parent step is disabled if it exists.");
+                    var stepId = FindStepIdByName($"CascadeFields: {configuration.ParentEntity}", pluginTypeId);
+                    if (stepId.HasValue)
+                    {
+                        // Keep the step's configuration up to date even when disabled.
+                        parentStepId = UpsertProcessingStep(configuration, pluginType, updateMessageId, parentFilterId, progress);
+                        parentPreImageId = UpsertPreImage(parentStepId, configuration, progress);
+                        SetStepEnabled(stepId.Value, enabled: false, progress);
+                    }
                 }
 
-                // Child steps: Create (PreOperation) and Update (PreOperation with lookup filtering)
+                // Child steps: Create (PreOperation) and Relink/Update (PreOperation with lookup filtering)
                 var createMessageId = GetSdkMessageId("Create");
                 foreach (var related in configuration.RelatedEntities ?? Enumerable.Empty<RelatedEntityConfigModel>())
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    // Create step for child
-                    var childCreateFilterId = GetSdkMessageFilterId(createMessageId, related.EntityName);
-                    var childCreateStepId = UpsertChildCreateStep(configuration, related, pluginType, createMessageId, childCreateFilterId, progress);
-
-                    if (solutionId.HasValue && solutionId != Guid.Empty)
+                    // Child Create step (optional)
+                    if (configuration.CascadeOnChildCreate)
                     {
-                        AddComponentsToSolution(pluginType, childCreateStepId, Guid.Empty, solutionId.Value, progress);
-                    }
-
-                    // Update step for child (only if lookupFieldName provided)
-                    if (!string.IsNullOrWhiteSpace(related.LookupFieldName))
-                    {
-                        var childUpdateFilterId = GetSdkMessageFilterId(updateMessageId, related.EntityName);
-                        var childUpdateStepId = UpsertChildUpdateStep(configuration, related, pluginType, updateMessageId, childUpdateFilterId, progress);
-                        var childUpdatePreImageId = UpsertChildUpdatePreImage(childUpdateStepId, related, progress);
+                        var childCreateFilterId = GetSdkMessageFilterId(createMessageId, related.EntityName);
+                        var childCreateStepId = UpsertChildCreateStep(configuration, related, pluginType, createMessageId, childCreateFilterId, progress);
+                        SetStepEnabled(childCreateStepId, enabled: true, progress);
 
                         if (solutionId.HasValue && solutionId != Guid.Empty)
                         {
-                            AddComponentsToSolution(pluginType, childUpdateStepId, childUpdatePreImageId, solutionId.Value, progress);
+                            AddComponentsToSolution(pluginType, childCreateStepId, Guid.Empty, solutionId.Value, progress);
                         }
                     }
                     else
                     {
-                        progress.Report($"Warning: 'lookupFieldName' not set for child '{related.EntityName}'. Skipping child Update step (relink). Create step published.");
+                        var createStepName = $"CascadeFields (Child Create): {related.EntityName}";
+                        var stepId = FindStepIdByName(createStepName, pluginTypeId);
+                        if (stepId.HasValue)
+                        {
+                            progress.Report($"Child Create cascades disabled by configuration; disabling step for '{related.EntityName}'.");
+                            // Keep the step's configuration up to date even when disabled.
+                            var childCreateFilterId = GetSdkMessageFilterId(createMessageId, related.EntityName);
+                            var childCreateStepId = UpsertChildCreateStep(configuration, related, pluginType, createMessageId, childCreateFilterId, progress);
+                            SetStepEnabled(stepId.Value, enabled: false, progress);
+                        }
+                    }
+
+                    // Child Relink step (optional)
+                    if (configuration.CascadeOnChildRelink)
+                    {
+                        if (!string.IsNullOrWhiteSpace(related.LookupFieldName))
+                        {
+                            var childUpdateFilterId = GetSdkMessageFilterId(updateMessageId, related.EntityName);
+                            var childUpdateStepId = UpsertChildUpdateStep(configuration, related, pluginType, updateMessageId, childUpdateFilterId, progress);
+                            var childUpdatePreImageId = UpsertChildUpdatePreImage(childUpdateStepId, related, progress);
+                            SetStepEnabled(childUpdateStepId, enabled: true, progress);
+
+                            if (solutionId.HasValue && solutionId != Guid.Empty)
+                            {
+                                AddComponentsToSolution(pluginType, childUpdateStepId, childUpdatePreImageId, solutionId.Value, progress);
+                            }
+                        }
+                        else
+                        {
+                            progress.Report($"Warning: 'lookupFieldName' not set for child '{related.EntityName}'. Skipping child Relink step.");
+                        }
+                    }
+                    else
+                    {
+                        var relinkStepName = $"CascadeFields (Child Relink): {related.EntityName}";
+                        var stepId = FindStepIdByName(relinkStepName, pluginTypeId);
+                        if (stepId.HasValue)
+                        {
+                            progress.Report($"Child Relink cascades disabled by configuration; disabling step for '{related.EntityName}'.");
+                            // Keep the step's configuration up to date even when disabled.
+                            if (!string.IsNullOrWhiteSpace(related.LookupFieldName))
+                            {
+                                var childUpdateFilterId = GetSdkMessageFilterId(updateMessageId, related.EntityName);
+                                var childUpdateStepId = UpsertChildUpdateStep(configuration, related, pluginType, updateMessageId, childUpdateFilterId, progress);
+                                UpsertChildUpdatePreImage(childUpdateStepId, related, progress);
+                            }
+                            else
+                            {
+                                progress.Report($"Warning: 'lookupFieldName' not set for child '{related.EntityName}'. Unable to update child Relink step configuration.");
+                            }
+                            SetStepEnabled(stepId.Value, enabled: false, progress);
+                        }
                     }
                 }
 
                 progress.Report("Publish complete: parent and child steps upserted.");
             }, cancellationToken);
+        }
+
+        private Guid? FindStepIdByName(string stepName, Guid pluginTypeId)
+        {
+            var query = new QueryExpression("sdkmessageprocessingstep")
+            {
+                ColumnSet = new ColumnSet("sdkmessageprocessingstepid")
+            };
+            query.Criteria.AddCondition("name", ConditionOperator.Equal, stepName);
+            query.Criteria.AddCondition("plugintypeid", ConditionOperator.Equal, pluginTypeId);
+
+            var existing = _service.RetrieveMultiple(query).Entities.FirstOrDefault();
+            return existing?.Id;
+        }
+
+        private void SetStepEnabled(Guid stepId, bool enabled, IProgress<string> progress)
+        {
+            try
+            {
+                // sdkmessageprocessingstep supports enable/disable via SetState.
+                // Typical values: statecode 0=Enabled, 1=Disabled; statuscode 1=Enabled, 2=Disabled.
+                var request = new OrganizationRequest("SetState")
+                {
+                    ["EntityMoniker"] = new EntityReference("sdkmessageprocessingstep", stepId),
+                    ["State"] = new OptionSetValue(enabled ? 0 : 1),
+                    ["Status"] = new OptionSetValue(enabled ? 1 : 2)
+                };
+                _service.Execute(request);
+                progress.Report($"Step {(enabled ? "enabled" : "disabled")}: {stepId}");
+            }
+            catch (Exception ex)
+            {
+                progress.Report($"Warning: unable to {(enabled ? "enable" : "disable")} step {stepId}: {ex.Message}");
+            }
         }
 
         /// <summary>

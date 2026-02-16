@@ -3,7 +3,8 @@
 
 ## Overview
 
-This guide covers all configuration options for CascadeFields, including best practices, UI behaviors, and advanced patterns. It reflects the latest features:
+This guide covers all configuration options for CascadeFields, including best practices, UI behaviors, and
+advanced patterns. It reflects the latest features:
 
 **Related documentation:**
 
@@ -16,8 +17,13 @@ This guide covers all configuration options for CascadeFields, including best pr
   - **JSON Preview:** Live JSON for your current configuration
 - **Checkboxes:**
   - **Is Active:** Toggle to enable/disable cascading for this configuration
-  - **Auto-delete Successful System Jobs:** When enabled, successful async System Jobs created by the parent step are automatically deleted to prevent clutter
-  - **Enable Detailed Tracing:** Controls how much the plug-in writes to Dataverse tracing (`ITracingService`). Enable for development, disable for production
+  - **Cascade on Parent changes (Update):** Control cascades triggered by parent updates
+  - **Cascade on new Child records (Create):** Control cascades triggered when child records are created
+  - **Cascade when Child association changes (Relink):** Control cascades triggered when a child is relinked
+  - **Auto-delete Successful System Jobs:** When enabled, successful async System Jobs created by the parent
+    step are automatically deleted to prevent clutter
+  - **Enable Detailed Tracing:** Controls how much the plug-in writes to Dataverse tracing (`ITracingService`).
+    Enable for development, disable for production
 - **Retrieve Configured Entity:**
   - If only one parent entity is configured, it loads automatically
   - If multiple, a selector dialog appears (selecting a child row highlights the parent)
@@ -329,7 +335,13 @@ Before deploying:
 
 Check execution time in trace logs:
 
-> **Note (Org Setting Required):** To capture and view Dataverse plug-in traces, your environment must have **Plug-in trace log** enabled. If set to **Off**, nothing is stored. If set to **Exception**, logs are stored only when the plug-in throws. Use **All** while troubleshooting. You can configure this in the **Power Platform admin center**: Environments → (your environment) → Settings → Plug-in trace log.
+> **Note (Org Setting Required):** To capture and view Dataverse plug-in traces, your environment must have
+> **Plug-in trace log** enabled.
+> If set to **Off**, nothing is stored.
+> If set to **Exception**, logs are stored only when the plug-in throws.
+> Use **All** while troubleshooting.
+> You can configure this in the **Power Platform admin center**:
+> Environments → (your environment) → Settings → Plug-in trace log.
 
 ```text
 [INFO] Update complete: 150 successful, 0 failed
